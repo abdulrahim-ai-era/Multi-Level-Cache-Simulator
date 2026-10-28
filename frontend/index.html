@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CACHEFLOW — Multi-Level Hardware Cache Simulator</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- LEFT SIDEBAR -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-logo">
+                    <!-- Layered geometric cache slabs logo -->
+                    <svg viewBox="0 0 32 32" class="logo-icon">
+                        <polygon points="16,2 30,9 16,16 2,9" fill="#00D9FF" opacity="0.95" />
+                        <polygon points="16,9 30,16 16,23 2,16" fill="#0080FF" opacity="0.8" />
+                        <polygon points="16,16 30,23 16,30 2,23" fill="#8A2BE2" opacity="0.7" />
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-title">CACHEFLOW</span>
+                    <span class="brand-subtitle">Multi-Level Cache Simulator</span>
+                </div>
+            </div>
+
+            <nav class="nav-menu">
+                <button class="nav-item active" data-tab="overview">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                    </svg>
+                    <span>Overview</span>
+                </button>
+
+                <button class="nav-item" data-tab="simulator">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    <span>Simulator</span>
+                </button>
+
+                <button class="nav-item" data-tab="analytics">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"></line>
+                        <line x1="12" y1="20" x2="12" y2="4"></line>
+                        <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
+                    <span>Analytics</span>
+                </button>
+
+                <button class="nav-item" data-tab="comparison">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M16 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1z"></path>
+                        <path d="M2 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1z"></path>
+                        <path d="M7 21h10"></path>
+                        <path d="M12 3v18"></path>
+                        <path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"></path>
+                    </svg>
+                    <span>Comparison</span>
+                </button>
+
+                <button class="nav-item" data-tab="about">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span>About</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="circuit-decoration"></div>
+                <div class="footer-tagline">
+                    <span>"Smarter Caches.</span>
+                    <span>Better Performance."</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN VIEW AREA -->
+        <main class="main-content">
+            <!-- TOP HEADER -->
+            <header class="top-header">
+                <div class="header-left">
+                    <h1 class="header-title" id="pageHeaderTitle">CACHEFLOW</h1>
+                    <span class="header-subtitle" id="pageHeaderSubtitle">Multi-Level Cache Simulator</span>
+                </div>
+
+                <div class="header-right">
+                    <div class="engine-badge" id="engineStatusBadge">
+                        <span class="status-pulse-dot"></span>
+                        <span class="status-text" id="engineStatusText">C++ Engine Connected</span>
+                    </div>
+
+                    <button class="icon-btn" id="btnSettings" title="Simulator Settings">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </header>
+
+            <!-- TAB 1: OVERVIEW PAGE (MAIN DASHBOARD) -->
+            <section class="tab-pane active" id="pane-overview">
+                <!-- 4 COMPACT METRICS -->
+                <div class="metrics-row">
+                    <div class="metric-card">
+                        <div class="metric-icon-wrap cyan-glow">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                            </svg>
+                        </div>
+                        <div class="metric-info">
+                            <span class="metric-label">Total Requests</span>
+                            <div class="metric-value-wrap">
+                                <span class="metric-value" id="valTotalRequests">0</span>
+                                <span class="metric-trend up" id="trendRequests">↑ 0%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon-wrap emerald-glow">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <circle cx="12" cy="12" r="6"></circle>
+                                <circle cx="12" cy="12" r="2"></circle>
+                            </svg>
+                        </div>
+                        <div class="metric-info">
+                            <span class="metric-label">Overall Hit Rate</span>
+                            <div class="metric-value-wrap">
+                                <span class="metric-value" id="valHitRate">0.0%</span>
+                                <span class="metric-trend up" id="trendHitRate">↑ 0.0%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon-wrap blue-glow">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                        </div>
+                        <div class="metric-info">
+                            <span class="metric-label">Avg. Access Time</span>
+                            <div class="metric-value-wrap">
+                                <span class="metric-value" id="valAvgTime">0.0 ns</span>
+                                <span class="metric-trend down" id="trendAvgTime">↓ 0%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon-wrap violet-glow">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                            </svg>
+                        </div>
+                        <div class="metric-info">
+                            <span class="metric-label">RAM Misses</span>
+                            <div class="metric-value-wrap">
+                                <span class="metric-value" id="valRamMisses">0</span>
+                                <span class="metric-trend" id="trendRamMisses">↑ 0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MAIN WORKSPACE: CACHE HIERARCHY & REQUEST SIMULATOR -->
+                <div class="workspace-grid">
+                    <!-- CENTRAL CACHE HIERARCHY VISUALIZATION -->
+                    <div class="panel hierarchy-panel">
+                        <div class="panel-header">
+                            <div class="panel-title-wrap">
+                                <svg class="panel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="18" cy="5" r="3"></circle>
+                                    <circle cx="6" cy="12" r="3"></circle>
+                                    <circle cx="18" cy="19" r="3"></circle>
+                                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                                </svg>
+                                <div>
+                                    <h2 class="panel-title">Cache Hierarchy</h2>
+                                    <span class="panel-subtitle">L1 → L2 → RAM (with LRU eviction)</span>
+                                </div>
+                            </div>
+                            <div class="hierarchy-legend">
+                                <span class="legend-badge l1-badge">L1: 1 ns</span>
+                                <span class="legend-badge l2-badge">L2: 5 ns</span>
+                                <span class="legend-badge ram-badge">RAM: 105 ns</span>
+                            </div>
+                        </div>
+
+                        <!-- 3 CACHE MODULES WITH PEDESTALS & CONNECTORS -->
+                        <div class="cache-hierarchy-container">
+                            <!-- L1 CACHE MODULE -->
+                            <div class="cache-module l1-module" id="moduleL1">
+                                <div class="module-glass-shell">
+                                    <div class="module-header">
+                                        <div class="module-name">L1 Cache</div>
+                                        <div class="module-spec" id="l1Spec">4 KB | 4-way</div>
+                                    </div>
+                                    <div class="slots-container" id="l1Slots">
+                                        <!-- Rendered dynamically by JS -->
+                                        <div class="slot-item empty"><span class="slot-addr">--</span></div>
+                                        <div class="slot-item empty"><span class="slot-addr">--</span></div>
+                                        <div class="slot-item empty"><span class="slot-addr">--</span></div>
+                                        <div class="slot-item empty"><span class="slot-addr">--</span></div>
+                                    </div>
+                                    <div class="module-footer">
+                                        <span class="label-mru">MRU</span>
+                                        <span class="label-lru">LRU</span>
+                                    </div>
+                                </div>
+                                <div class="module-pedestal l1-pedestal">
+                                    <div class="pedestal-ring"></div>
+                                    <div class="pedestal-glow"></div>
+                                </div>
+                            </div>
+
+                            <!-- CONNECTOR 1 -->
+                            <div class="hierarchy-connector">
+                                <div class="connector-arrows" id="connectorL1L2">
+                                    <span class="arrow-right">➔</span>
+                                    <span class="arrow-left">➔</span>
+                                </div>
+                            </div>
+
+                            <!-- L2 CACHE MODULE -->
+                            <div class="cache-module l2-module" id="moduleL2">
+                                <div class="module-glass-shell">
+                                    <div class="module-header">
+                                        <div class="module-name">L2 Cache</div>
+                                        <div class="module-spec" id="l2Spec">32 KB | 8-way</div>
+                                    </div>
+                                    <div class="slots-container" id="l2Slots">
+                                        <!-- Rendered dynamically by JS -->
+                                        <div class="slot-item empty"><span class="slot-addr">--</span></div>
+                                        <div class="slot-item empty"><span class="slot-addr">--</span></div>
+                                        <div class="slot-item empty"><span class="slot-addr">--</span></div>
+                                        <div class="slot-item empty"><span class="slot-addr">--</span></div>
+                                    </div>
+                                    <div class="module-footer">
+                                        <span class="label-mru">MRU</span>
+                                        <span class="label-lru">LRU</span>
+                                    </div>
+                                </div>
+                                <div class="module-pedestal l2-pedestal">
+                                    <div class="pedestal-ring"></div>
+                                    <div class="pedestal-glow"></div>
+                                </div>
+                            </div>
+
+                            <!-- CONNECTOR 2 -->
+                            <div class="hierarchy-connector">
+                                <div class="connector-arrows" id="connectorL2RAM">
+                                    <span class="arrow-right">➔</span>
+                                    <span class="arrow-left">➔</span>
+                                </div>
+                            </div>
+
+                            <!-- RAM MODULE -->
+                            <div class="cache-module ram-module" id="moduleRAM">
+                                <div class="module-glass-shell">
+                                    <div class="module-header">
+                                        <div class="module-name">
+                                            <svg class="chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+                                                <rect x="9" y="9" width="6" height="6"></rect>
+                                            </svg>
+                                            RAM
+                                        </div>
+                                        <div class="module-spec">Main Memory</div>
+                                    </div>
+                                    <div class="slots-container" id="ramSlots">
+                                        <!-- Backing memory representative addresses -->
+                                        <div class="slot-item ram-slot"><span class="slot-addr">0x0000</span><span class="slot-dot violet"></span></div>
+                                        <div class="slot-item ram-slot"><span class="slot-addr">0x1000</span><span class="slot-dot violet"></span></div>
+                                        <div class="slot-item ram-slot"><span class="slot-addr">0x2000</span><span class="slot-dot violet"></span></div>
+                                        <div class="slot-item ram-slot"><span class="slot-addr">0x3000</span><span class="slot-dot violet"></span></div>
+                                    </div>
+                                    <div class="module-footer">
+                                        <span class="label-mru">MRU</span>
+                                        <span class="label-lru">LRU</span>
+                                    </div>
+                                </div>
+                                <div class="module-pedestal ram-pedestal">
+                                    <div class="pedestal-ring"></div>
+                                    <div class="pedestal-glow"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- COMPACT REQUEST SIMULATOR PANEL -->
+                    <div class="panel simulator-card">
+                        <div class="panel-header">
+                            <div class="panel-title-wrap">
+                                <svg class="panel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="4 17 10 11 4 5"></polyline>
+                                    <line x1="12" y1="19" x2="20" y2="19"></line>
+                                </svg>
+                                <h2 class="panel-title">Request Simulator</h2>
+                            </div>
+                        </div>
+
+                        <div class="sim-controls-form">
+                            <!-- Single Address Input -->
+                            <div class="form-group">
+                                <label class="input-label" for="inputSingleAddr">Address Request</label>
+                                <div class="input-action-row">
+                                    <input type="text" id="inputSingleAddr" class="futuristic-input" placeholder="Enter memory address (e.g. 0x3A1F)" autocomplete="off">
+                                    <button class="btn btn-primary" id="btnSendAddr" title="Send address to C++ engine">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                        </svg>
+                                        <span>Send</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Optional Sequence Input -->
+                            <div class="form-group">
+                                <label class="input-label" for="inputSequence">Load Sequence (optional)</label>
+                                <div class="input-action-row">
+                                    <input type="text" id="inputSequence" class="futuristic-input" placeholder="e.g. 0x3A1F, 0x7B80, 0x9F11..." autocomplete="off">
+                                    <button class="btn btn-secondary" id="btnLoadSeq" title="Load sequence into queue">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                        </svg>
+                                        <span>Load</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Playback Action Buttons -->
+                            <div class="btn-group-row">
+                                <button class="btn btn-action-cyan" id="btnRequest">
+                                    <svg viewBox="0 0 24 24" fill="currentColor">
+                                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                    </svg>
+                                    <span>Request</span>
+                                </button>
+
+                                <button class="btn btn-outline" id="btnNextStep">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                                        <line x1="19" y1="5" x2="19" y2="19"></line>
+                                    </svg>
+                                    <span>Next Step</span>
+                                </button>
+
+                                <button class="btn btn-outline" id="btnReset">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+                                    </svg>
+                                    <span>Reset</span>
+                                </button>
+                            </div>
+
+                            <!-- Capacity & Delay Selectors -->
+                            <div class="selectors-row">
+                                <div class="selector-field">
+                                    <label for="selectL1Cap">L1 Capacity</label>
+                                    <select id="selectL1Cap" class="futuristic-select">
+                                        <option value="4" selected>4 lines</option>
+                                        <option value="8">8 lines</option>
+                                    </select>
+                                </div>
+
+                                <div class="selector-field">
+                                    <label for="selectL2Cap">L2 Capacity</label>
+                                    <select id="selectL2Cap" class="futuristic-select">
+                                        <option value="8" selected>8 lines</option>
+                                        <option value="16">16 lines</option>
+                                    </select>
+                                </div>
+
+                                <div class="selector-field">
+                                    <label for="selectDelay">Delay (ms)</label>
+                                    <select id="selectDelay" class="futuristic-select">
+                                        <option value="300">300 ms</option>
+                                        <option value="500" selected>500 ms</option>
+                                        <option value="1000">1000 ms</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LATEST OPERATION PANEL -->
+                <div class="panel latest-op-panel">
+                    <div class="panel-header-mini">
+                        <svg class="flash-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                        </svg>
+                        <span>Latest Operation</span>
+                    </div>
+
+                    <div class="latest-op-content">
+                        <!-- Left Result Badge -->
+                        <div class="op-badge-wrap" id="latestOpBadgeWrap">
+                            <div class="op-status-badge hit" id="opStatusBadge">
+                                <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                                <span id="opStatusText">READY</span>
+                            </div>
+                        </div>
+
+                        <!-- Middle Descriptive Message -->
+                        <div class="op-description-wrap">
+                            <p class="op-desc-main" id="opDescText">Engine initialized. Ready to process memory addresses.</p>
+                            <p class="op-desc-sub" id="opAccessTimeText">Access Time: --</p>
+                        </div>
+
+                        <!-- Right Cache Movement Flow -->
+                        <div class="cache-movement-wrap">
+                            <div class="movement-header">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+                                    <rect x="9" y="9" width="6" height="6"></rect>
+                                </svg>
+                                <span>Cache Movement</span>
+                            </div>
+                            <div class="movement-breadcrumbs" id="movementBreadcrumbs">
+                                <span class="step-pill active" id="crumbL1">L1 Cache</span>
+                                <span class="crumb-separator">➔</span>
+                                <span class="step-pill" id="crumbL2">L2 Cache</span>
+                                <span class="crumb-separator">➔</span>
+                                <span class="step-pill" id="crumbRAM">RAM</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: DEDICATED SIMULATOR PAGE -->
+            <section class="tab-pane" id="pane-simulator">
+                <div class="page-title-row">
+                    <div>
+                        <h2 class="subpage-title">Advanced Sequence Simulator</h2>
+                        <p class="subpage-desc">Step-by-step trace execution, playback control, and temporal locality patterns.</p>
+                    </div>
+                    <div class="sequence-progress-box">
+                        <span class="progress-label" id="simProgressLabel">Step 0 of 0</span>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="simProgressBar" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="simulator-layout">
+                    <!-- Control Bar -->
+                    <div class="panel sim-panel-top">
+                        <div class="sim-presets-bar">
+                            <span class="preset-label">Test Workloads:</span>
+                            <button class="btn btn-preset" data-preset="loop">Temporal Locality (Loop)</button>
+                            <button class="btn btn-preset" data-preset="sequential">Spatial Locality (Array)</button>
+                            <button class="btn btn-preset" data-preset="thrash">Thrashing Conflict (Ping-Pong)</button>
+                            <button class="btn btn-preset" data-preset="random">Random Access</button>
+                        </div>
+
+                        <div class="sim-playback-bar">
+                            <button class="btn btn-action-cyan" id="btnSimPlay">
+                                <svg viewBox="0 0 24 24" fill="currentColor">
+                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                </svg>
+                                <span id="btnSimPlayText">Run Auto</span>
+                            </button>
+                            <button class="btn btn-outline" id="btnSimStep">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                                    <line x1="19" y1="5" x2="19" y2="19"></line>
+                                </svg>
+                                <span>Next Single Step</span>
+                            </button>
+                            <button class="btn btn-outline" id="btnSimPause">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="6" y="4" width="4" height="16"></rect>
+                                    <rect x="14" y="4" width="4" height="16"></rect>
+                                </svg>
+                                <span>Pause</span>
+                            </button>
+                            <button class="btn btn-outline" id="btnSimReset">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+                                </svg>
+                                <span>Reset State</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Live Trace Table -->
+                    <div class="panel trace-table-panel">
+                        <div class="panel-header">
+                            <h3 class="panel-title">Real-Time Execution Trace</h3>
+                            <span class="trace-count" id="traceCountBadge">0 operations</span>
+                        </div>
+                        <div class="table-container">
+                            <table class="futuristic-table" id="traceTable">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Address</th>
+                                        <th>Result</th>
+                                        <th>Access Time</th>
+                                        <th>Promotion</th>
+                                        <th>Demotion</th>
+                                        <th>Eviction</th>
+                                        <th>Movement Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="traceTableBody">
+                                    <tr>
+                                        <td colspan="8" class="text-center empty-cell">No requests executed yet. Run a sequence above to stream C++ simulation trace.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: ANALYTICS PAGE -->
+            <section class="tab-pane" id="pane-analytics">
+                <div class="page-title-row">
+                    <div>
+                        <h2 class="subpage-title">Hardware Performance Analytics</h2>
+                        <p class="subpage-desc">Comprehensive analysis of cache hierarchy hits, misses, latency reduction, and memory speedup.</p>
+                    </div>
+                </div>
+
+                <!-- 4 Performance Summary Cards -->
+                <div class="analytics-metrics-grid">
+                    <div class="analytics-card">
+                        <span class="analytics-label">L1 Hit Rate</span>
+                        <div class="analytics-val-row">
+                            <span class="analytics-value emerald-text" id="analyticsL1HitRate">0.0%</span>
+                            <span class="analytics-sub" id="analyticsL1Hits">0 hits</span>
+                        </div>
+                        <div class="analytics-bar-bg">
+                            <div class="analytics-bar-fill emerald" id="barL1HitRate" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="analytics-card">
+                        <span class="analytics-label">L2 Hit Rate</span>
+                        <div class="analytics-val-row">
+                            <span class="analytics-value blue-text" id="analyticsL2HitRate">0.0%</span>
+                            <span class="analytics-sub" id="analyticsL2Hits">0 hits</span>
+                        </div>
+                        <div class="analytics-bar-bg">
+                            <div class="analytics-bar-fill blue" id="barL2HitRate" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="analytics-card">
+                        <span class="analytics-label">RAM Miss Rate</span>
+                        <div class="analytics-val-row">
+                            <span class="analytics-value violet-text" id="analyticsRamMissRate">0.0%</span>
+                            <span class="analytics-sub" id="analyticsRamMisses">0 misses</span>
+                        </div>
+                        <div class="analytics-bar-bg">
+                            <div class="analytics-bar-fill violet" id="barRamMissRate" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="analytics-card">
+                        <span class="analytics-label">Average Access Time</span>
+                        <div class="analytics-val-row">
+                            <span class="analytics-value cyan-text" id="analyticsAvgTime">0.0 ns</span>
+                            <span class="analytics-sub" id="analyticsTimeSaved">0.0 ns saved</span>
+                        </div>
+                        <div class="analytics-bar-bg">
+                            <div class="analytics-bar-fill cyan" id="barAvgTime" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Visualizations: Performance Over Time & Cache Occupancy -->
+                <div class="analytics-charts-grid">
+                    <div class="panel chart-panel">
+                        <div class="panel-header">
+                            <h3 class="panel-title">Latency & Access Time Over History</h3>
+                            <span class="chart-unit">Latency (ns)</span>
+                        </div>
+                        <div class="chart-canvas-wrapper">
+                            <canvas id="timelineChart" width="600" height="220"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="panel chart-panel">
+                        <div class="panel-header">
+                            <h3 class="panel-title">Cache Capacity & Occupancy</h3>
+                            <span class="chart-unit">Lines In Use</span>
+                        </div>
+                        <div class="occupancy-container">
+                            <div class="occupancy-item">
+                                <div class="occupancy-info">
+                                    <span class="occupancy-name">L1 Cache</span>
+                                    <span class="occupancy-stat" id="occupancyL1Text">0 / 4 lines (0%)</span>
+                                </div>
+                                <div class="progress-bar-bg large">
+                                    <div class="progress-bar-fill emerald" id="barOccupancyL1" style="width: 0%;"></div>
+                                </div>
+                            </div>
+
+                            <div class="occupancy-item">
+                                <div class="occupancy-info">
+                                    <span class="occupancy-name">L2 Cache</span>
+                                    <span class="occupancy-stat" id="occupancyL2Text">0 / 8 lines (0%)</span>
+                                </div>
+                                <div class="progress-bar-bg large">
+                                    <div class="progress-bar-fill blue" id="barOccupancyL2" style="width: 0%;"></div>
+                                </div>
+                            </div>
+
+                            <div class="speedup-highlight-box">
+                                <div class="speedup-label">Hierarchy Effective Speedup</div>
+                                <div class="speedup-value" id="valEffectiveSpeedup">1.0x</div>
+                                <div class="speedup-formula">Formula: (Direct RAM Latency × Requests) / Total Hierarchical Time</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Compact DSA Detailed Statistics Section -->
+                <div class="panel stats-detail-panel">
+                    <div class="panel-header">
+                        <h3 class="panel-title">Hardware Performance Counters</h3>
+                    </div>
+                    <div class="counters-grid">
+                        <div class="counter-box">
+                            <span class="counter-num" id="statL1Hits">0</span>
+                            <span class="counter-lbl">L1 Cache Hits</span>
+                        </div>
+                        <div class="counter-box">
+                            <span class="counter-num" id="statL2Hits">0</span>
+                            <span class="counter-lbl">L2 Cache Hits</span>
+                        </div>
+                        <div class="counter-box">
+                            <span class="counter-num" id="statRamMisses">0</span>
+                            <span class="counter-lbl">RAM Misses (Backing Fetch)</span>
+                        </div>
+                        <div class="counter-box">
+                            <span class="counter-num" id="statEvictions">0</span>
+                            <span class="counter-lbl">Total Evictions (L2 Cascade)</span>
+                        </div>
+                        <div class="counter-box">
+                            <span class="counter-num" id="statTimeSaved">0 ns</span>
+                            <span class="counter-lbl">Total Time Saved</span>
+                        </div>
+                        <div class="counter-box">
+                            <span class="counter-num" id="statSpeedup">0%</span>
+                            <span class="counter-lbl">Speedup Percentage</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: COMPARISON PAGE (LRU vs FIFO vs LFU) -->
+            <section class="tab-pane" id="pane-comparison">
+                <div class="page-title-row">
+                    <div>
+                        <h2 class="subpage-title">Eviction Policy Benchmark Comparison</h2>
+                        <p class="subpage-desc">Run identical trace sequences across three independent C++ cache instances: LRU, FIFO, and LFU.</p>
+                    </div>
+                    <button class="btn btn-action-cyan" id="btnRunComparison">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                        <span>Run Multi-Policy Benchmark</span>
+                    </button>
+                </div>
+
+                <div class="comparison-grid">
+                    <!-- Policy Card: LRU -->
+                    <div class="panel policy-card featured">
+                        <div class="policy-header">
+                            <div class="policy-badge lru">LRU</div>
+                            <h3 class="policy-title">Least Recently Used</h3>
+                        </div>
+                        <p class="policy-desc">Tracks temporal recency via custom Doubly Linked List. Moves accessed entries to MRU (Head); evicts from Tail on full.</p>
+                        <div class="policy-stats">
+                            <div class="stat-line">
+                                <span>Hit Rate:</span>
+                                <strong class="emerald-text" id="cmpLruHitRate">--</strong>
+                            </div>
+                            <div class="stat-line">
+                                <span>Miss Rate:</span>
+                                <strong id="cmpLruMissRate">--</strong>
+                            </div>
+                            <div class="stat-line">
+                                <span>Avg. Latency:</span>
+                                <strong class="cyan-text" id="cmpLruAvgTime">--</strong>
+                            </div>
+                            <div class="stat-line">
+                                <span>Evictions:</span>
+                                <strong id="cmpLruEvictions">--</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Policy Card: FIFO -->
+                    <div class="panel policy-card">
+                        <div class="policy-header">
+                            <div class="policy-badge fifo">FIFO</div>
+                            <h3 class="policy-title">First In, First Out</h3>
+                        </div>
+                        <p class="policy-desc">Evicts strictly in order of initial insertion time. Ignores subsequent access hits when updating line priority.</p>
+                        <div class="policy-stats">
+                            <div class="stat-line">
+                                <span>Hit Rate:</span>
+                                <strong class="blue-text" id="cmpFifoHitRate">--</strong>
+                            </div>
+                            <div class="stat-line">
+                                <span>Miss Rate:</span>
+                                <strong id="cmpFifoMissRate">--</strong>
+                            </div>
+                            <div class="stat-line">
+                                <span>Avg. Latency:</span>
+                                <strong class="cyan-text" id="cmpFifoAvgTime">--</strong>
+                            </div>
+                            <div class="stat-line">
+                                <span>Evictions:</span>
+                                <strong id="cmpFifoEvictions">--</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Policy Card: LFU -->
+                    <div class="panel policy-card">
+                        <div class="policy-header">
+                            <div class="policy-badge lfu">LFU</div>
+                            <h3 class="policy-title">Least Frequently Used</h3>
+                        </div>
+                        <p class="policy-desc">Evicts entry with lowest cumulative access frequency counter. Breaks ties using oldest insertion/access timestamp.</p>
+                        <div class="policy-stats">
+                            <div class="stat-line">
+                                <span>Hit Rate:</span>
+                                <strong class="violet-text" id="cmpLfuHitRate">--</strong>
+                            </div>
+                            <div class="stat-line">
+                                <span>Miss Rate:</span>
+                                <strong id="cmpLfuMissRate">--</strong>
+                            </div>
+                            <div class="stat-line">
+                                <span>Avg. Latency:</span>
+                                <strong class="cyan-text" id="cmpLfuAvgTime">--</strong>
+                            </div>
+                            <div class="stat-line">
+                                <span>Evictions:</span>
+                                <strong id="cmpLfuEvictions">--</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Comparison Chart & Table -->
+                <div class="panel chart-panel">
+                    <div class="panel-header">
+                        <h3 class="panel-title">Comparative Performance Breakdown</h3>
+                    </div>
+                    <div class="chart-canvas-wrapper">
+                        <canvas id="comparisonChart" width="700" height="240"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 5: ABOUT PAGE -->
+            <section class="tab-pane" id="pane-about">
+                <div class="page-title-row">
+                    <div>
+                        <h2 class="subpage-title">About CACHEFLOW & Architecture</h2>
+                        <p class="subpage-desc">University Data Structures and Algorithms semester project demonstration.</p>
+                    </div>
+                </div>
+
+                <div class="about-grid">
+                    <div class="panel about-card">
+                        <h3 class="about-header">DSA Core Foundations</h3>
+                        <p class="about-p">
+                            CACHEFLOW demonstrates modern cache design using two foundational data structures working in tandem to achieve <strong>O(1)</strong> amortized time complexity for both lookup and eviction:
+                        </p>
+                        <ul class="about-list">
+                            <li><strong>Custom Doubly Linked List:</strong> Provides O(1) removal, insertion at Head (MRU), and eviction from Tail (LRU) without shifting memory arrays.</li>
+                            <li><strong>Hash Map (<code class="code-tag">std::unordered_map</code>):</strong> Maps memory addresses to linked list node pointers, enabling constant-time O(1) cache line lookup.</li>
+                            <li><strong>Cascading Promotion & Demotion:</strong> Exclusive hierarchy invariant ensures that an entry promoted from L2 to L1 displaces L1's LRU line, safely demoting it back to L2.</li>
+                        </ul>
+                    </div>
+
+                    <div class="panel about-card">
+                        <h3 class="about-header">Hardware Memory Hierarchy Model</h3>
+                        <div class="hierarchy-flow-diagram">
+                            <div class="flow-step">
+                                <span class="flow-title">CPU Request</span>
+                                <span class="flow-sub">Address Bus</span>
+                            </div>
+                            <span class="flow-arrow">➔</span>
+                            <div class="flow-step l1-glow">
+                                <span class="flow-title">L1 Cache</span>
+                                <span class="flow-sub">1 ns Latency</span>
+                            </div>
+                            <span class="flow-arrow">➔</span>
+                            <div class="flow-step l2-glow">
+                                <span class="flow-title">L2 Cache</span>
+                                <span class="flow-sub">5 ns Latency</span>
+                            </div>
+                            <span class="flow-arrow">➔</span>
+                            <div class="flow-step ram-glow">
+                                <span class="flow-title">Main Memory</span>
+                                <span class="flow-sub">105 ns Latency</span>
+                            </div>
+                        </div>
+
+                        <div class="educational-disclaimer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="16" x2="12" y2="12"></line>
+                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                            </svg>
+                            <p>
+                                <strong>Educational Notice:</strong> CACHEFLOW simulates the theoretical behavior, replacement algorithms, and relative latency hierarchy of a simplified computer architecture. It serves as a visual and algorithmic tool rather than a cycle-accurate physical CPU benchmark.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- SETTINGS MODAL -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>Simulator Settings & API Configuration</h3>
+                <button class="modal-close" id="btnCloseSettings">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Backend API Base URL</label>
+                    <input type="text" id="settingApiUrl" class="futuristic-input" value="http://localhost:8080">
+                </div>
+                <div class="form-group">
+                    <label>Eviction Policy</label>
+                    <select id="settingPolicy" class="futuristic-select">
+                        <option value="LRU" selected>LRU (Least Recently Used)</option>
+                        <option value="FIFO">FIFO (First In First Out)</option>
+                        <option value="LFU">LFU (Least Frequently Used)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="btnSaveSettings">Save & Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="js/cache-viz.js"></script>
+    <script src="js/charts.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
+
