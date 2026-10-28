@@ -122,7 +122,335 @@ const App = (function() {
     const settingPolicy = document.getElementById('settingPolicy');
 
     // ==========================================
-    // API SERVICE WRAPPER
+    // EMBEDDED DSA ENGINE (For Cloud Deployments like Vercel & Netlify)
+    // Runs when native C++ backend is not reachable in cloud/static environments
+    // ==========================================
+    class CloudNode {
+        constructor(entry) {
+            this.entry = entry;
+            this.prev = null;
+            this.next = null;
+        }
+    }
+
+    class CloudDoublyLinkedList {
+        constructor() {
+            this.head = null;
+            this.tail = null;
+            this.size = 0;
+        }
+        pushFront(node) {
+            node.prev = null;
+            node.next = this.head;
+            if (this.head) this.head.prev = node;
+            else this.tail = node;
+            this.head = node;
+            this.size++;
+        }
+        removeNode(node) {
+            if (!node) return;
+            if (node.prev) node.prev.next = node.next;
+            else this.head = node.next;
+            if (node.next) node.next.prev = node.prev;
+            else this.tail = node.prev;
+            node.prev = null;
+            node.next = null;
+            this.size--;
+        }
+        moveToFront(node) {
+            if (!node || node === this.head) return;
+            this.removeNode(node);
+            this.pushFront(node);
+        }
+        popBack() {
+            if (!this.tail) return null;
+            const lru = this.tail;
+            this.removeNode(lru);
+            return lru;
+        }
+        toVector() {
+            const res = [];
+            let curr = this.head;
+            while (curr) {
+                res.push(curr.entry);
+                curr = curr.next;
+            }
+            return res;
+        }
+        clear() {
+            this.head = null;
+            this.tail = null;
+            this.size = 0;
+        }
+    }
+
+    class CloudCacheLevel {
+        constructor(name, capacity, policy = 'LRU', latency = 1.0) {
+            this.name = name;
+            this.capacity = capacity;
+            this.policy = policy;
+            this.latency = latency;
+            this.list = new CloudDoublyLinkedList();
+            this.map = new Map();
+        }
+        isFull() { return this.map.size >= this.capacity; }
+        contains(addr) { return this.map.has(addr); }
+        access(addr, time) {
+            if (!this.map.has(addr)) return false;
+            const node = this.map.get(addr);
+            node.entry.frequency++;
+            node.entry.lastAccessTime = time;
+            if (this.policy === 'LRU') this.list.moveToFront(node);
+            return true;
+        }
+        insert(entry) {
+            if (this.map.has(entry.address)) {
+                const node = this.map.get(entry.address);
+                node.entry = entry;
+                node.entry.frequency++;
+                if (this.policy === 'LRU') this.list.moveToFront(node);
+                return { didEvict: false, evicted: null };
+            }
+            let didEvict = false;
+            let evicted = null;
+            if (this.isFull()) {
+                evicted = this.evictCandidate();
+                didEvict = evicted !== null;
+            }
+            const newNode = new CloudNode(entry);
+            this.list.pushFront(newNode);
+            this.map.set(entry.address, newNode);
+            return { didEvict, evicted };
+        }
+        remove(addr) {
+            if (!this.map.has(addr)) return null;
+            const node = this.map.get(addr);
+            this.map.delete(addr);
+            this.list.removeNode(node);
+            return node.entry;
+        }
+        evictCandidate() {
+            if (this.map.size === 0) return null;
+            let candidate = null;
+            if (this.policy === 'LRU' || this.policy === 'FIFO') {
+                candidate = this.list.tail;
+            } else if (this.policy === 'LFU') {
+                let curr = this.list.head;
+                candidate = curr;
+                while (curr) {
+                    if (curr.entry.frequency < candidate.entry.frequency ||
+                        (curr.entry.frequency === candidate.entry.frequency && curr.entry.lastAccessTime < candidate.entry.lastAccessTime)) {
+                        candidate = curr;
+                    }
+                    curr = curr.next;
+                }
+            }
+            if (!candidate) return null;
+            const entry = candidate.entry;
+            this.map.delete(entry.address);
+            this.list.removeNode(candidate);
+            return entry;
+        }
+        clear() {
+            this.map.clear();
+            this.list.clear();
+        }
+        getEntries() {
+            return this.list.toVector();
+        }
+    }
+
+    class CloudMemoryHierarchy {
+        constructor(l1Cap = 4, l2Cap = 8, policy = 'LRU') {
+            this.policy = policy;
+            this.l1 = new CloudCacheLevel('L1', l1Cap, policy, 1.0);
+            this.l2 = new CloudCacheLevel('L2', l2Cap, policy, 4.0);
+            this.timeStep = 0;
+            this.ramList = ['0x0000', '0x1000', '0x2000', '0x3000'];
+            this.history = [];
+            this.metrics = {
+                totalRequests: 0, l1Hits: 0, l2Hits: 0, ramMisses: 0,
+                totalEvictions: 0, totalAccessTimeNs: 0
+            };
+        }
+        normalizeAddress(raw) {
+            let s = String(raw).trim().toUpperCase();
+            if (s.startsWith('0X')) s = s.substring(2);
+            while (s.length < 4) s = '0' + s;
+            return '0x' + s;
+        }
+        request(rawAddr) {
+            const addr = this.normalizeAddress(rawAddr);
+            this.timeStep++;
+            this.metrics.totalRequests++;
+
+            const op = {
+                address: addr,
+                result: 'RAM_MISS',
+                accessTimeNs: 105.0,
+                description: '',
+                promotedAddress: '',
+                demotedAddress: '',
+                evictedAddress: '',
+                movement: []
+            };
+
+            // 1. Check L1
+            if (this.l1.access(addr, this.timeStep)) {
+                this.metrics.l1Hits++;
+                this.metrics.totalAccessTimeNs += 1.0;
+                op.result = 'L1_HIT';
+                op.accessTimeNs = 1.0;
+                op.description = `Address ${addr} found in L1 Cache.`;
+                op.movement = ['L1 Hit', 'L2', 'RAM'];
+                this.history.push(op);
+                return op;
+            }
+
+            // 2. Check L2
+            if (this.l2.contains(addr)) {
+                this.metrics.l2Hits++;
+                this.metrics.totalAccessTimeNs += 5.0;
+                const entry = this.l2.remove(addr);
+                entry.frequency++;
+                entry.lastAccessTime = this.timeStep;
+                op.promotedAddress = addr;
+
+                const l1Res = this.l1.insert(entry);
+                if (l1Res.didEvict) {
+                    op.demotedAddress = l1Res.evicted.address;
+                    const l2Res = this.l2.insert(l1Res.evicted);
+                    if (l2Res.didEvict) {
+                        op.evictedAddress = l2Res.evicted.address;
+                        this.metrics.totalEvictions++;
+                    }
+                }
+
+                op.result = 'L2_HIT';
+                op.accessTimeNs = 5.0;
+                op.description = `Address ${addr} found in L2 Cache. Promoted to L1.`;
+                op.movement = ['L1 Miss', 'L2 Hit', 'Promoted to L1'];
+                this.history.push(op);
+                return op;
+            }
+
+            // 3. RAM Miss
+            this.metrics.ramMisses++;
+            this.metrics.totalAccessTimeNs += 105.0;
+            const fetched = { address: addr, frequency: 1, lastAccessTime: this.timeStep };
+
+            if (!this.ramList.includes(addr)) {
+                this.ramList.unshift(addr);
+                if (this.ramList.length > 6) this.ramList.pop();
+            }
+
+            const l1Res = this.l1.insert(fetched);
+            if (l1Res.didEvict) {
+                op.demotedAddress = l1Res.evicted.address;
+                const l2Res = this.l2.insert(l1Res.evicted);
+                if (l2Res.didEvict) {
+                    op.evictedAddress = l2Res.evicted.address;
+                    this.metrics.totalEvictions++;
+                }
+            }
+
+            op.result = 'RAM_MISS';
+            op.accessTimeNs = 105.0;
+            op.description = `Address ${addr} was absent from both cache levels and required a RAM access.`;
+            op.movement = ['L1 Miss', 'L2 Miss', 'RAM Fetch'];
+            this.history.push(op);
+            return op;
+        }
+        getState(lastOp = null) {
+            const tot = this.metrics.totalRequests;
+            const l1H = this.metrics.l1Hits;
+            const l2H = this.metrics.l2Hits;
+            const rM = this.metrics.ramMisses;
+            const accTime = this.metrics.totalAccessTimeNs;
+            const directRam = 105.0 * tot;
+            const saved = directRam - accTime;
+
+            const metricsObj = {
+                totalRequests: tot,
+                l1Hits: l1H,
+                l2Hits: l2H,
+                ramMisses: rM,
+                totalEvictions: this.metrics.totalEvictions,
+                totalAccessTimeNs: accTime,
+                overallHitRate: tot > 0 ? ((l1H + l2H) / tot) * 100 : 0.0,
+                l1HitRate: tot > 0 ? (l1H / tot) * 100 : 0.0,
+                l2HitRate: tot > 0 ? (l2H / tot) * 100 : 0.0,
+                ramMissRate: tot > 0 ? (rM / tot) * 100 : 0.0,
+                avgAccessTimeNs: tot > 0 ? accTime / tot : 0.0,
+                timeSavedNs: saved,
+                speedupFactor: accTime > 0 ? directRam / accTime : 1.0,
+                l1OccupancyPct: (this.l1.map.size / this.l1.capacity) * 100,
+                l2OccupancyPct: (this.l2.map.size / this.l2.capacity) * 100
+            };
+
+            const l1Arr = this.l1.getEntries();
+            const l2Arr = this.l2.getEntries();
+
+            return {
+                status: 'ok',
+                connected: true,
+                engine: 'CACHEFLOW Engine (Cloud Web Mode)',
+                policy: this.policy,
+                l1Capacity: this.l1.capacity,
+                l2Capacity: this.l2.capacity,
+                metrics: metricsObj,
+                l1: l1Arr.map((e, idx) => ({ address: e.address, frequency: e.frequency, position: idx, isMru: idx === 0, isLru: idx === l1Arr.length - 1 })),
+                l2: l2Arr.map((e, idx) => ({ address: e.address, frequency: e.frequency, position: idx, isMru: idx === 0, isLru: idx === l2Arr.length - 1 })),
+                ram: this.ramList.map((addr, idx) => ({ address: addr, position: idx })),
+                latestOperation: lastOp || (this.history.length > 0 ? this.history[this.history.length - 1] : null)
+            };
+        }
+        reset(l1Cap, l2Cap, policy) {
+            if (l1Cap) this.l1.capacity = l1Cap;
+            if (l2Cap) this.l2.capacity = l2Cap;
+            if (policy) {
+                this.policy = policy;
+                this.l1.policy = policy;
+                this.l2.policy = policy;
+            }
+            this.l1.clear();
+            this.l2.clear();
+            this.timeStep = 0;
+            this.ramList = ['0x0000', '0x1000', '0x2000', '0x3000'];
+            this.history = [];
+            this.metrics = {
+                totalRequests: 0, l1Hits: 0, l2Hits: 0, ramMisses: 0,
+                totalEvictions: 0, totalAccessTimeNs: 0
+            };
+        }
+    }
+
+    const cloudSim = new CloudMemoryHierarchy(4, 8, 'LRU');
+
+    function executeCloudCompare(seq, l1Cap, l2Cap) {
+        const simL = new CloudMemoryHierarchy(l1Cap, l2Cap, 'LRU');
+        const simF = new CloudMemoryHierarchy(l1Cap, l2Cap, 'FIFO');
+        const simU = new CloudMemoryHierarchy(l1Cap, l2Cap, 'LFU');
+
+        seq.forEach(addr => {
+            simL.request(addr);
+            simF.request(addr);
+            simU.request(addr);
+        });
+
+        return {
+            status: 'ok',
+            sequenceLength: seq.length,
+            l1Capacity: l1Cap,
+            l2Capacity: l2Cap,
+            lru: simL.getState().metrics,
+            fifo: simF.getState().metrics,
+            lfu: simU.getState().metrics
+        };
+    }
+
+    // ==========================================
+    // API SERVICE WRAPPER (Dual-Mode: Local C++ / Cloud Emulation)
     // ==========================================
     async function apiRequest(endpoint, method = 'GET', data = null) {
         const url = `${API_BASE_URL}${endpoint}`;
@@ -137,27 +465,67 @@ const App = (function() {
         }
 
         try {
+            // Short timeout so cloud deployments fall back instantly
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1200);
+            options.signal = controller.signal;
+
             const resp = await fetch(url, options);
-            if (!resp.ok) {
-                throw new Error(`HTTP ${resp.status}`);
-            }
+            clearTimeout(timeoutId);
+
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const json = await resp.json();
-            setEngineConnected(true);
+            setEngineConnected(true, 'C++ Engine Connected');
             return json;
         } catch (err) {
-            console.warn(`[API] Failure on ${endpoint}:`, err.message);
-            setEngineConnected(false);
+            // Seamlessly fall back to Cloud DSA Engine (for Vercel/Netlify)
+            setEngineConnected(true, 'Cloud Engine Active');
+
+            if (endpoint === '/api/status') {
+                return cloudSim.getState();
+            }
+            if (endpoint === '/api/request' && method === 'POST') {
+                const op = cloudSim.request(data && data.address ? data.address : '0x0000');
+                return cloudSim.getState(op);
+            }
+            if (endpoint === '/api/sequence' && method === 'POST') {
+                let lastOp = null;
+                const seq = (data && data.sequence) || [];
+                seq.forEach(addr => { lastOp = cloudSim.request(addr); });
+                return cloudSim.getState(lastOp);
+            }
+            if (endpoint === '/api/reset' && method === 'POST') {
+                cloudSim.reset(data.l1Capacity, data.l2Capacity, data.policy);
+                return cloudSim.getState();
+            }
+            if (endpoint === '/api/config' && method === 'POST') {
+                if (data.l1Capacity) cloudSim.l1.capacity = data.l1Capacity;
+                if (data.l2Capacity) cloudSim.l2.capacity = data.l2Capacity;
+                if (data.policy) {
+                    cloudSim.policy = data.policy;
+                    cloudSim.l1.policy = data.policy;
+                    cloudSim.l2.policy = data.policy;
+                }
+                return cloudSim.getState();
+            }
+            if (endpoint === '/api/compare' && method === 'POST') {
+                const seq = (data && data.sequence && data.sequence.length > 0)
+                    ? data.sequence
+                    : ['0x1000', '0x2000', '0x3000', '0x4000', '0x1000', '0x5000', '0x2000', '0x6000', '0x1000', '0x7000'];
+                return executeCloudCompare(seq, data.l1Capacity || 4, data.l2Capacity || 8);
+            }
+
             return null;
         }
     }
 
-    function setEngineConnected(isConnected) {
+    function setEngineConnected(isConnected, label = 'C++ Engine Connected') {
         if (isConnected) {
             engineStatusBadge.className = 'engine-badge';
-            engineStatusText.textContent = 'C++ Engine Connected';
+            engineStatusText.textContent = label;
         } else {
             engineStatusBadge.className = 'engine-badge disconnected';
-            engineStatusText.textContent = 'C++ Engine Disconnected';
+            engineStatusText.textContent = 'Engine Offline';
         }
     }
 
