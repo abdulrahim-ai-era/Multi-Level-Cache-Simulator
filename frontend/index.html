@@ -168,10 +168,10 @@
                             </svg>
                         </div>
                         <div class="metric-info">
-                            <span class="metric-label">RAM Misses</span>
+                            <span class="metric-label">RAM Found</span>
                             <div class="metric-value-wrap">
                                 <span class="metric-value" id="valRamMisses">0</span>
-                                <span class="metric-trend" id="trendRamMisses">↑ 0%</span>
+                                <span class="metric-trend" id="trendRamMisses">0 accesses</span>
                             </div>
                         </div>
                     </div>
@@ -192,10 +192,11 @@
                                 </svg>
                                 <div>
                                     <h2 class="panel-title">Cache Hierarchy</h2>
-                                    <span class="panel-subtitle">L1 → L2 → RAM (with LRU eviction)</span>
+                                    <span class="panel-subtitle" id="hierarchySubtitle">L1 → L2 → RAM (Policy: LRU)</span>
                                 </div>
                             </div>
                             <div class="hierarchy-legend">
+                                <span class="legend-badge adaptive-badge" id="badgeActivePolicy" style="display: none; background: rgba(0, 217, 255, 0.2); color: #00D9FF; border: 1px solid #00D9FF;">Active: LRU</span>
                                 <span class="legend-badge l1-badge">L1: 1 ns</span>
                                 <span class="legend-badge l2-badge">L2: 5 ns</span>
                                 <span class="legend-badge ram-badge">RAM: 105 ns</span>
@@ -370,7 +371,28 @@
                                 </button>
                             </div>
 
-                            <!-- Capacity & Delay Selectors -->
+                            <!-- Capacity, Delay & Policy Selectors -->
+                            <div class="selectors-row" style="grid-template-columns: 1fr 1fr; margin-bottom: 8px;">
+                                <div class="selector-field">
+                                    <label for="selectPolicy">Eviction Policy</label>
+                                    <select id="selectPolicy" class="futuristic-select" style="border-color: rgba(0, 217, 255, 0.4); font-weight: 600;">
+                                        <option value="LRU" selected>LRU (Least Recently Used)</option>
+                                        <option value="FIFO">FIFO (First In First Out)</option>
+                                        <option value="LFU">LFU (Least Frequently Used)</option>
+                                        <option value="ADAPTIVE">⚡ ADAPTIVE (Auto-Decide)</option>
+                                    </select>
+                                </div>
+                                <div class="selector-field">
+                                    <label for="selectBlockSize">Block Size</label>
+                                    <select id="selectBlockSize" class="futuristic-select">
+                                        <option value="1" selected>1 Byte</option>
+                                        <option value="4">4 Bytes</option>
+                                        <option value="16">16 Bytes</option>
+                                        <option value="64">64 Bytes</option>
+                                    </select>
+                                </div>
+                            </div>
+
                             <div class="selectors-row">
                                 <div class="selector-field">
                                     <label for="selectL1Cap">L1 Capacity</label>
@@ -569,10 +591,10 @@
                     </div>
 
                     <div class="analytics-card">
-                        <span class="analytics-label">RAM Miss Rate</span>
+                        <span class="analytics-label">RAM Found Rate</span>
                         <div class="analytics-val-row">
                             <span class="analytics-value violet-text" id="analyticsRamMissRate">0.0%</span>
-                            <span class="analytics-sub" id="analyticsRamMisses">0 misses</span>
+                            <span class="analytics-sub" id="analyticsRamMisses">0 found</span>
                         </div>
                         <div class="analytics-bar-bg">
                             <div class="analytics-bar-fill violet" id="barRamMissRate" style="width: 0%;"></div>
@@ -654,7 +676,7 @@
                         </div>
                         <div class="counter-box">
                             <span class="counter-num" id="statRamMisses">0</span>
-                            <span class="counter-lbl">RAM Misses (Backing Fetch)</span>
+                            <span class="counter-lbl">RAM Found (Backing Fetch)</span>
                         </div>
                         <div class="counter-box">
                             <span class="counter-num" id="statEvictions">0</span>
@@ -672,12 +694,12 @@
                 </div>
             </section>
 
-            <!-- TAB 4: COMPARISON PAGE (LRU vs FIFO vs LFU) -->
+            <!-- TAB 4: COMPARISON PAGE (LRU vs FIFO vs LFU vs ADAPTIVE) -->
             <section class="tab-pane" id="pane-comparison">
                 <div class="page-title-row">
                     <div>
                         <h2 class="subpage-title">Eviction Policy Benchmark Comparison</h2>
-                        <p class="subpage-desc">Run identical trace sequences across three independent C++ cache instances: LRU, FIFO, and LFU.</p>
+                        <p class="subpage-desc">Run identical trace sequences across independent C++ cache instances: LRU, FIFO, LFU, and ADAPTIVE.</p>
                     </div>
                     <button class="btn btn-action-cyan" id="btnRunComparison">
                         <svg viewBox="0 0 24 24" fill="currentColor">
@@ -687,7 +709,7 @@
                     </button>
                 </div>
 
-                <div class="comparison-grid">
+                <div class="comparison-grid" style="grid-template-columns: repeat(4, 1fr);">
                     <!-- Policy Card: LRU -->
                     <div class="panel policy-card featured">
                         <div class="policy-header">
@@ -701,7 +723,7 @@
                                 <strong class="emerald-text" id="cmpLruHitRate">--</strong>
                             </div>
                             <div class="stat-line">
-                                <span>Miss Rate:</span>
+                                <span>RAM Found:</span>
                                 <strong id="cmpLruMissRate">--</strong>
                             </div>
                             <div class="stat-line">
@@ -728,7 +750,7 @@
                                 <strong class="blue-text" id="cmpFifoHitRate">--</strong>
                             </div>
                             <div class="stat-line">
-                                <span>Miss Rate:</span>
+                                <span>RAM Found:</span>
                                 <strong id="cmpFifoMissRate">--</strong>
                             </div>
                             <div class="stat-line">
@@ -755,7 +777,7 @@
                                 <strong class="violet-text" id="cmpLfuHitRate">--</strong>
                             </div>
                             <div class="stat-line">
-                                <span>Miss Rate:</span>
+                                <span>RAM Found:</span>
                                 <strong id="cmpLfuMissRate">--</strong>
                             </div>
                             <div class="stat-line">
@@ -765,6 +787,33 @@
                             <div class="stat-line">
                                 <span>Evictions:</span>
                                 <strong id="cmpLfuEvictions">--</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Policy Card: ADAPTIVE (Auto-Decide) -->
+                    <div class="panel policy-card" style="border-color: rgba(0, 217, 255, 0.4); box-shadow: 0 0 20px rgba(0, 217, 255, 0.1);">
+                        <div class="policy-header">
+                            <div class="policy-badge adaptive" style="background: rgba(0, 217, 255, 0.2); color: #00D9FF;">ADAPTIVE</div>
+                            <h3 class="policy-title">Adaptive Auto</h3>
+                        </div>
+                        <p class="policy-desc">Simulates LRU & LFU shadow windows simultaneously. Dynamically switches to whichever policy achieves higher hit rate.</p>
+                        <div class="policy-stats">
+                            <div class="stat-line">
+                                <span>Hit Rate:</span>
+                                <strong class="cyan-text" id="cmpAdaptiveHitRate">--</strong>
+                            </div>
+                            <div class="stat-line">
+                                <span>Switches:</span>
+                                <strong id="cmpAdaptiveSwitches">--</strong>
+                            </div>
+                            <div class="stat-line">
+                                <span>Avg. Latency:</span>
+                                <strong class="cyan-text" id="cmpAdaptiveAvgTime">--</strong>
+                            </div>
+                            <div class="stat-line">
+                                <span>Active:</span>
+                                <strong class="emerald-text" id="cmpAdaptiveActivePolicy">--</strong>
                             </div>
                         </div>
                     </div>
@@ -861,6 +910,7 @@
                         <option value="LRU" selected>LRU (Least Recently Used)</option>
                         <option value="FIFO">FIFO (First In First Out)</option>
                         <option value="LFU">LFU (Least Frequently Used)</option>
+                        <option value="ADAPTIVE">⚡ ADAPTIVE (Auto-Decide / Dynamic Switch)</option>
                     </select>
                 </div>
             </div>

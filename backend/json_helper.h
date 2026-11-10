@@ -29,6 +29,7 @@ inline std::string policyToString(PolicyType p) {
         case PolicyType::LRU: return "LRU";
         case PolicyType::FIFO: return "FIFO";
         case PolicyType::LFU: return "LFU";
+        case PolicyType::ADAPTIVE: return "ADAPTIVE";
         default: return "LRU";
     }
 }
@@ -36,6 +37,7 @@ inline std::string policyToString(PolicyType p) {
 inline PolicyType stringToPolicy(const std::string& str) {
     if (str == "FIFO") return PolicyType::FIFO;
     if (str == "LFU") return PolicyType::LFU;
+    if (str == "ADAPTIVE") return PolicyType::ADAPTIVE;
     return PolicyType::LRU;
 }
 
@@ -43,7 +45,7 @@ inline std::string resultToString(AccessResult r) {
     switch (r) {
         case AccessResult::L1_HIT: return "L1_HIT";
         case AccessResult::L2_HIT: return "L2_HIT";
-        case AccessResult::RAM_MISS: return "RAM_MISS";
+        case AccessResult::RAM_HIT: return "RAM_HIT";
         default: return "UNKNOWN";
     }
 }
@@ -67,13 +69,15 @@ inline std::string metricsToJson(const CacheMetrics& m, size_t l1Cap, size_t l2C
        << "\"totalRequests\":" << m.totalRequests << ","
        << "\"l1Hits\":" << m.l1Hits << ","
        << "\"l2Hits\":" << m.l2Hits << ","
-       << "\"ramMisses\":" << m.ramMisses << ","
+       << "\"ramHits\":" << m.ramHits << ","
+       << "\"ramMisses\":" << m.ramHits << "," // Backwards compatibility for existing UI bindings
        << "\"totalEvictions\":" << m.totalEvictions << ","
        << "\"totalAccessTimeNs\":" << m.totalAccessTimeNs << ","
        << "\"overallHitRate\":" << m.getOverallHitRate() << ","
        << "\"l1HitRate\":" << m.getL1HitRate() << ","
        << "\"l2HitRate\":" << m.getL2HitRate() << ","
-       << "\"ramMissRate\":" << m.getRamMissRate() << ","
+       << "\"ramHitRate\":" << m.getRamHitRate() << ","
+       << "\"ramMissRate\":" << m.getRamHitRate() << ","
        << "\"avgAccessTimeNs\":" << m.getAvgAccessTime() << ","
        << "\"timeSavedNs\":" << m.getTimeSaved() << ","
        << "\"speedupFactor\":" << m.getSpeedup() << ","
@@ -94,6 +98,7 @@ inline std::string operationToJson(const OperationRecord& op) {
        << "\"promotedAddress\":\"" << escapeString(op.promotedAddress) << "\","
        << "\"demotedAddress\":\"" << escapeString(op.demotedAddress) << "\","
        << "\"evictedAddress\":\"" << escapeString(op.evictedAddress) << "\","
+       << "\"policySwitch\":\"" << escapeString(op.policySwitch) << "\","
        << "\"movement\":[";
     for (size_t i = 0; i < op.movementBreadcrumb.size(); ++i) {
         if (i > 0) ss << ",";
@@ -103,7 +108,6 @@ inline std::string operationToJson(const OperationRecord& op) {
     return ss.str();
 }
 
-// Simple key-value extractor for JSON payloads
 inline std::string extractStringField(const std::string& json, const std::string& key) {
     std::string pattern = "\"" + key + "\"";
     size_t pos = json.find(pattern);
@@ -112,7 +116,6 @@ inline std::string extractStringField(const std::string& json, const std::string
     pos = json.find(':', pos);
     if (pos == std::string::npos) return "";
 
-    // Find opening quote
     size_t start = json.find('"', pos);
     if (start == std::string::npos) return "";
 
@@ -130,7 +133,6 @@ inline int extractIntField(const std::string& json, const std::string& key, int 
     pos = json.find(':', pos);
     if (pos == std::string::npos) return defaultVal;
 
-    // Skip whitespace
     pos = json.find_first_not_of(" \t\r\n", pos + 1);
     if (pos == std::string::npos) return defaultVal;
 
@@ -169,4 +171,3 @@ inline std::vector<std::string> extractStringArray(const std::string& json, cons
 } // namespace JsonHelper
 
 #endif // JSON_HELPER_H
-

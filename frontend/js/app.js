@@ -14,6 +14,7 @@ const App = (function() {
     let currentL2Cap = 8;
     let currentDelayMs = 500;
     let currentPolicy = 'LRU';
+    let currentBlockSize = 1;
 
     // Sequence Simulation State
     let sequenceQueue = [];
@@ -27,6 +28,8 @@ const App = (function() {
     const pageHeaderSubtitle = document.getElementById('pageHeaderSubtitle');
     const engineStatusBadge = document.getElementById('engineStatusBadge');
     const engineStatusText = document.getElementById('engineStatusText');
+    const hierarchySubtitle = document.getElementById('hierarchySubtitle');
+    const badgeActivePolicy = document.getElementById('badgeActivePolicy');
 
     // Overview Metric Elements
     const valTotalRequests = document.getElementById('valTotalRequests');
@@ -50,6 +53,8 @@ const App = (function() {
     const selectL1Cap = document.getElementById('selectL1Cap');
     const selectL2Cap = document.getElementById('selectL2Cap');
     const selectDelay = document.getElementById('selectDelay');
+    const selectPolicy = document.getElementById('selectPolicy');
+    const selectBlockSize = document.getElementById('selectBlockSize');
 
     // Latest Operation Elements
     const opStatusBadge = document.getElementById('opStatusBadge');
@@ -112,6 +117,10 @@ const App = (function() {
     const cmpLfuMissRate = document.getElementById('cmpLfuMissRate');
     const cmpLfuAvgTime = document.getElementById('cmpLfuAvgTime');
     const cmpLfuEvictions = document.getElementById('cmpLfuEvictions');
+    const cmpAdaptiveHitRate = document.getElementById('cmpAdaptiveHitRate');
+    const cmpAdaptiveSwitches = document.getElementById('cmpAdaptiveSwitches');
+    const cmpAdaptiveAvgTime = document.getElementById('cmpAdaptiveAvgTime');
+    const cmpAdaptiveActivePolicy = document.getElementById('cmpAdaptiveActivePolicy');
 
     // Settings Modal
     const btnSettings = document.getElementById('btnSettings');
@@ -261,17 +270,46 @@ const App = (function() {
     }
 
     class CloudMemoryHierarchy {
-        constructor(l1Cap = 4, l2Cap = 8, policy = 'LRU') {
+        constructor(l1Cap = 4, l2Cap = 8, policy = 'LRU', blockSize = 1) {
             this.policy = policy;
-            this.l1 = new CloudCacheLevel('L1', l1Cap, policy, 1.0);
-            this.l2 = new CloudCacheLevel('L2', l2Cap, policy, 4.0);
+            this.blockSize = blockSize || 1;
+            this.concretePolicy = policy === 'ADAPTIVE' ? 'LRU' : policy;
+            this.l1 = new CloudCacheLevel('L1', l1Cap, this.concretePolicy, 1.0);
+            this.l2 = new CloudCacheLevel('L2', l2Cap, this.concretePolicy, 4.0);
             this.timeStep = 0;
             this.ramList = ['0x0000', '0x1000', '0x2000', '0x3000'];
             this.history = [];
+            this.switchLog = [];
             this.metrics = {
                 totalRequests: 0, l1Hits: 0, l2Hits: 0, ramMisses: 0,
                 totalEvictions: 0, totalAccessTimeNs: 0
             };
+
+            // Shadow simulators for Adaptive policy
+            this.windowRequests = 0;
+            this.lruWindowStartHits = 0;
+            this.lfuWindowStartHits = 0;
+            if (this.policy === 'ADAPTIVE') {
+                this.setupAdaptive();
+            }
+        }
+        setupAdaptive() {
+            this.shadowLru = new CloudMemoryHierarchy(this.l1.capacity, this.l2.capacity, 'LRU', this.blockSize);
+            this.shadowLfu = new CloudMemoryHierarchy(this.l1.capacity, this.l2.capacity, 'LFU', this.blockSize);
+            this.windowRequests = 0;
+            this.lruWindowStartHits = 0;
+            this.lfuWindowStartHits = 0;
+            this.switchLog = [];
+        }
+        toBlockAddress(addr) {
+            if (this.blockSize <= 1) return addr;
+            try {
+                let v = parseInt(addr.replace('0x', ''), 16);
+                v -= (v % this.blockSize);
+                return '0x' + v.toString(16).toUpperCase().padStart(4, '0');
+            } catch (e) {
+                return addr;
+            }
         }
         normalizeAddress(raw) {
             let s = String(raw).trim().toUpperCase();
@@ -279,19 +317,56 @@ const App = (function() {
             while (s.length < 4) s = '0' + s;
             return '0x' + s;
         }
+        adaptiveStep(addr, op) {
+            if (!this.shadowLru || !this.shadowLfu) return;
+            this.shadowLru.request(addr);
+            this.shadowLfu.request(addr);
+            this.windowRequests++;
+
+            if (this.windowRequests < 200) return;
+
+            const lruHits = this.shadowLru.metrics.l1Hits + this.shadowLru.metrics.l2Hits;
+            const lfuHits = this.shadowLfu.metrics.l1Hits + this.shadowLfu.metrics.l2Hits;
+            const lruRate = ((lruHits - this.lruWindowStartHits) * 100.0) / 200;
+            const lfuRate = ((lfuHits - this.lfuWindowStartHits) * 100.0) / 200;
+            this.lruWindowStartHits = lruHits;
+            this.lfuWindowStartHits = lfuHits;
+            this.windowRequests = 0;
+
+            const current = this.l1.policy;
+            let winner = current;
+            if (lruRate > lfuRate) winner = 'LRU';
+            else if (lfuRate > lruRate) winner = 'LFU';
+
+            if (winner !== current) {
+                this.switchLog.push({
+                    atRequest: this.timeStep,
+                    from: current,
+                    to: winner,
+                    lruRate: lruRate,
+                    lfuRate: lfuRate
+                });
+                this.l1.policy = winner;
+                this.l2.policy = winner;
+                op.policySwitch = `Adaptive switch at request ${this.timeStep}: ${current} -> ${winner} (LRU ${lruRate.toFixed(1)}% vs LFU ${lfuRate.toFixed(1)}%)`;
+            }
+        }
         request(rawAddr) {
-            const addr = this.normalizeAddress(rawAddr);
+            let addr = this.normalizeAddress(rawAddr);
+            addr = this.toBlockAddress(addr);
+
             this.timeStep++;
             this.metrics.totalRequests++;
 
             const op = {
                 address: addr,
-                result: 'RAM_MISS',
+                result: 'RAM_HIT',
                 accessTimeNs: 105.0,
                 description: '',
                 promotedAddress: '',
                 demotedAddress: '',
                 evictedAddress: '',
+                policySwitch: '',
                 movement: []
             };
 
@@ -303,6 +378,7 @@ const App = (function() {
                 op.accessTimeNs = 1.0;
                 op.description = `Address ${addr} found in L1 Cache.`;
                 op.movement = ['L1 Hit', 'L2', 'RAM'];
+                if (this.policy === 'ADAPTIVE') this.adaptiveStep(addr, op);
                 this.history.push(op);
                 return op;
             }
@@ -330,11 +406,12 @@ const App = (function() {
                 op.accessTimeNs = 5.0;
                 op.description = `Address ${addr} found in L2 Cache. Promoted to L1.`;
                 op.movement = ['L1 Miss', 'L2 Hit', 'Promoted to L1'];
+                if (this.policy === 'ADAPTIVE') this.adaptiveStep(addr, op);
                 this.history.push(op);
                 return op;
             }
 
-            // 3. RAM Miss
+            // 3. RAM Hit (RAM Found)
             this.metrics.ramMisses++;
             this.metrics.totalAccessTimeNs += 105.0;
             const fetched = { address: addr, frequency: 1, lastAccessTime: this.timeStep };
@@ -354,10 +431,11 @@ const App = (function() {
                 }
             }
 
-            op.result = 'RAM_MISS';
+            op.result = 'RAM_HIT';
             op.accessTimeNs = 105.0;
-            op.description = `Address ${addr} was absent from both cache levels and required a RAM access.`;
-            op.movement = ['L1 Miss', 'L2 Miss', 'RAM Fetch'];
+            op.description = `Address ${addr} was not in L1 or L2, so it was fetched from RAM (RAM Found).`;
+            op.movement = ['L1 Miss', 'L2 Miss', 'RAM Found'];
+            if (this.policy === 'ADAPTIVE') this.adaptiveStep(addr, op);
             this.history.push(op);
             return op;
         }
@@ -374,12 +452,14 @@ const App = (function() {
                 totalRequests: tot,
                 l1Hits: l1H,
                 l2Hits: l2H,
+                ramHits: rM,
                 ramMisses: rM,
                 totalEvictions: this.metrics.totalEvictions,
                 totalAccessTimeNs: accTime,
                 overallHitRate: tot > 0 ? ((l1H + l2H) / tot) * 100 : 0.0,
                 l1HitRate: tot > 0 ? (l1H / tot) * 100 : 0.0,
                 l2HitRate: tot > 0 ? (l2H / tot) * 100 : 0.0,
+                ramHitRate: tot > 0 ? (rM / tot) * 100 : 0.0,
                 ramMissRate: tot > 0 ? (rM / tot) * 100 : 0.0,
                 avgAccessTimeNs: tot > 0 ? accTime / tot : 0.0,
                 timeSavedNs: saved,
@@ -396,6 +476,10 @@ const App = (function() {
                 connected: true,
                 engine: 'CACHEFLOW Engine (Cloud Web Mode)',
                 policy: this.policy,
+                activePolicy: this.l1.policy,
+                blockSize: this.blockSize,
+                switchCount: this.switchLog.length,
+                switchLog: this.switchLog,
                 l1Capacity: this.l1.capacity,
                 l2Capacity: this.l2.capacity,
                 metrics: metricsObj,
@@ -405,37 +489,43 @@ const App = (function() {
                 latestOperation: lastOp || (this.history.length > 0 ? this.history[this.history.length - 1] : null)
             };
         }
-        reset(l1Cap, l2Cap, policy) {
+        reset(l1Cap, l2Cap, policy, blockSize) {
             if (l1Cap) this.l1.capacity = l1Cap;
             if (l2Cap) this.l2.capacity = l2Cap;
+            if (blockSize) this.blockSize = blockSize;
             if (policy) {
                 this.policy = policy;
-                this.l1.policy = policy;
-                this.l2.policy = policy;
+                this.concretePolicy = policy === 'ADAPTIVE' ? 'LRU' : policy;
+                this.l1.policy = this.concretePolicy;
+                this.l2.policy = this.concretePolicy;
             }
             this.l1.clear();
             this.l2.clear();
             this.timeStep = 0;
             this.ramList = ['0x0000', '0x1000', '0x2000', '0x3000'];
             this.history = [];
+            this.switchLog = [];
             this.metrics = {
                 totalRequests: 0, l1Hits: 0, l2Hits: 0, ramMisses: 0,
                 totalEvictions: 0, totalAccessTimeNs: 0
             };
+            if (this.policy === 'ADAPTIVE') this.setupAdaptive();
         }
     }
 
-    const cloudSim = new CloudMemoryHierarchy(4, 8, 'LRU');
+    const cloudSim = new CloudMemoryHierarchy(4, 8, 'LRU', 1);
 
-    function executeCloudCompare(seq, l1Cap, l2Cap) {
-        const simL = new CloudMemoryHierarchy(l1Cap, l2Cap, 'LRU');
-        const simF = new CloudMemoryHierarchy(l1Cap, l2Cap, 'FIFO');
-        const simU = new CloudMemoryHierarchy(l1Cap, l2Cap, 'LFU');
+    function executeCloudCompare(seq, l1Cap, l2Cap, blockSize = 1) {
+        const simL = new CloudMemoryHierarchy(l1Cap, l2Cap, 'LRU', blockSize);
+        const simF = new CloudMemoryHierarchy(l1Cap, l2Cap, 'FIFO', blockSize);
+        const simU = new CloudMemoryHierarchy(l1Cap, l2Cap, 'LFU', blockSize);
+        const simA = new CloudMemoryHierarchy(l1Cap, l2Cap, 'ADAPTIVE', blockSize);
 
         seq.forEach(addr => {
             simL.request(addr);
             simF.request(addr);
             simU.request(addr);
+            simA.request(addr);
         });
 
         return {
@@ -443,9 +533,13 @@ const App = (function() {
             sequenceLength: seq.length,
             l1Capacity: l1Cap,
             l2Capacity: l2Cap,
+            blockSize: blockSize,
             lru: simL.getState().metrics,
             fifo: simF.getState().metrics,
-            lfu: simU.getState().metrics
+            lfu: simU.getState().metrics,
+            adaptive: simA.getState().metrics,
+            adaptiveSwitches: simA.switchLog.length,
+            adaptiveActivePolicy: simA.l1.policy
         };
     }
 
@@ -495,16 +589,19 @@ const App = (function() {
                 return cloudSim.getState(lastOp);
             }
             if (endpoint === '/api/reset' && method === 'POST') {
-                cloudSim.reset(data.l1Capacity, data.l2Capacity, data.policy);
+                cloudSim.reset(data.l1Capacity, data.l2Capacity, data.policy, data.blockSize);
                 return cloudSim.getState();
             }
             if (endpoint === '/api/config' && method === 'POST') {
                 if (data.l1Capacity) cloudSim.l1.capacity = data.l1Capacity;
                 if (data.l2Capacity) cloudSim.l2.capacity = data.l2Capacity;
+                if (data.blockSize) cloudSim.blockSize = data.blockSize;
                 if (data.policy) {
                     cloudSim.policy = data.policy;
-                    cloudSim.l1.policy = data.policy;
-                    cloudSim.l2.policy = data.policy;
+                    cloudSim.concretePolicy = data.policy === 'ADAPTIVE' ? 'LRU' : data.policy;
+                    cloudSim.l1.policy = cloudSim.concretePolicy;
+                    cloudSim.l2.policy = cloudSim.concretePolicy;
+                    if (data.policy === 'ADAPTIVE') cloudSim.setupAdaptive();
                 }
                 return cloudSim.getState();
             }
@@ -512,7 +609,7 @@ const App = (function() {
                 const seq = (data && data.sequence && data.sequence.length > 0)
                     ? data.sequence
                     : ['0x1000', '0x2000', '0x3000', '0x4000', '0x1000', '0x5000', '0x2000', '0x6000', '0x1000', '0x7000'];
-                return executeCloudCompare(seq, data.l1Capacity || 4, data.l2Capacity || 8);
+                return executeCloudCompare(seq, data.l1Capacity || 4, data.l2Capacity || 8, data.blockSize || 1);
             }
 
             return null;
@@ -541,14 +638,28 @@ const App = (function() {
         valTotalRequests.textContent = m.totalRequests !== undefined ? m.totalRequests.toLocaleString() : '0';
         valHitRate.textContent = m.overallHitRate !== undefined ? `${m.overallHitRate.toFixed(1)}%` : '0.0%';
         valAvgTime.textContent = m.avgAccessTimeNs !== undefined ? `${m.avgAccessTimeNs.toFixed(1)} ns` : '0.0 ns';
-        valRamMisses.textContent = m.ramMisses !== undefined ? m.ramMisses.toLocaleString() : '0';
+        valRamMisses.textContent = (m.ramHits !== undefined ? m.ramHits : m.ramMisses || 0).toLocaleString();
 
         // Trend indicators based on values
         if (m.totalRequests > 0) {
             trendRequests.textContent = `↑ ${m.totalRequests}`;
             trendHitRate.textContent = m.overallHitRate > 75 ? `↑ ${m.overallHitRate.toFixed(1)}%` : `↓ ${(100 - m.overallHitRate).toFixed(1)}%`;
             trendAvgTime.textContent = m.avgAccessTimeNs < 30 ? `↓ ${m.avgAccessTimeNs.toFixed(1)} ns` : `↑ ${m.avgAccessTimeNs.toFixed(1)} ns`;
-            trendRamMisses.textContent = `${m.ramMissRate.toFixed(1)}% miss`;
+            trendRamMisses.textContent = `${(m.ramHitRate !== undefined ? m.ramHitRate : m.ramMissRate || 0).toFixed(1)}% RAM`;
+        }
+
+        // Active Policy display for ADAPTIVE
+        if (state.policy === 'ADAPTIVE') {
+            if (hierarchySubtitle) hierarchySubtitle.textContent = `L1 → L2 → RAM (⚡ ADAPTIVE Mode)`;
+            if (badgeActivePolicy) {
+                badgeActivePolicy.style.display = 'inline-block';
+                badgeActivePolicy.textContent = `Active: ${state.activePolicy || 'LRU'}`;
+            }
+        } else {
+            if (hierarchySubtitle) hierarchySubtitle.textContent = `L1 → L2 → RAM (Policy: ${state.policy || 'LRU'})`;
+            if (badgeActivePolicy) {
+                badgeActivePolicy.style.display = 'none';
+            }
         }
 
         // Cache Hierarchy Visualization
@@ -579,10 +690,14 @@ const App = (function() {
             opStatusText.textContent = 'L2 HIT';
         } else {
             opStatusBadge.classList.add('miss');
-            opStatusText.textContent = 'RAM MISS';
+            opStatusText.textContent = 'RAM FOUND';
         }
 
-        opDescText.textContent = op.description || `Processed address ${op.address}`;
+        let desc = op.description || `Processed address ${op.address}`;
+        if (op.policySwitch) {
+            desc += ` [${op.policySwitch}]`;
+        }
+        opDescText.textContent = desc;
         opAccessTimeText.textContent = `Access Time: ${op.accessTimeNs} ns`;
 
         // Cache Movement Breadcrumbs
@@ -604,7 +719,7 @@ const App = (function() {
             crumbL1.textContent = '✕ L1 Miss';
             crumbL2.textContent = '✕ L2 Miss';
             crumbRAM.classList.add('active');
-            crumbRAM.textContent = '● RAM Fetch';
+            crumbRAM.textContent = '● RAM Found';
         }
     }
 
@@ -621,9 +736,11 @@ const App = (function() {
         analyticsL2Hits.textContent = `${m.l2Hits} hits`;
         barL2HitRate.style.width = `${Math.min(m.l2HitRate, 100)}%`;
 
-        analyticsRamMissRate.textContent = `${m.ramMissRate.toFixed(1)}%`;
-        analyticsRamMisses.textContent = `${m.ramMisses} misses`;
-        barRamMissRate.style.width = `${Math.min(m.ramMissRate, 100)}%`;
+        const ramHits = m.ramHits !== undefined ? m.ramHits : m.ramMisses || 0;
+        const ramRate = m.ramHitRate !== undefined ? m.ramHitRate : m.ramMissRate || 0;
+        analyticsRamMissRate.textContent = `${ramRate.toFixed(1)}%`;
+        analyticsRamMisses.textContent = `${ramHits} found`;
+        barRamMissRate.style.width = `${Math.min(ramRate, 100)}%`;
 
         analyticsAvgTime.textContent = `${m.avgAccessTimeNs.toFixed(1)} ns`;
         analyticsTimeSaved.textContent = `${m.timeSavedNs.toFixed(0)} ns saved`;
@@ -648,7 +765,7 @@ const App = (function() {
         // Performance Counters
         statL1Hits.textContent = m.l1Hits;
         statL2Hits.textContent = m.l2Hits;
-        statRamMisses.textContent = m.ramMisses;
+        statRamMisses.textContent = m.ramHits !== undefined ? m.ramHits : m.ramMisses || 0;
         statEvictions.textContent = m.totalEvictions;
         statTimeSaved.textContent = `${m.timeSavedNs.toFixed(0)} ns`;
         const speedupPct = m.totalRequests > 0 ? ((m.timeSavedNs / (105.0 * m.totalRequests)) * 100) : 0;
@@ -670,18 +787,27 @@ const App = (function() {
         const stepNum = operationHistory.length;
 
         let resBadgeClass = 'emerald-text';
+        let resLabel = op.result;
         if (op.result === 'L2_HIT') resBadgeClass = 'blue-text';
-        if (op.result === 'RAM_MISS') resBadgeClass = 'violet-text';
+        if (op.result === 'RAM_HIT' || op.result === 'RAM_MISS') {
+            resBadgeClass = 'violet-text';
+            resLabel = 'RAM FOUND';
+        }
+
+        let descText = op.description || '';
+        if (op.policySwitch) {
+            descText = `<strong>${op.policySwitch}</strong><br>${descText}`;
+        }
 
         tr.innerHTML = `
             <td>#${stepNum}</td>
             <td><strong>${op.address}</strong></td>
-            <td class="${resBadgeClass}"><strong>${op.result}</strong></td>
+            <td class="${resBadgeClass}"><strong>${resLabel}</strong></td>
             <td>${op.accessTimeNs} ns</td>
             <td>${op.promotedAddress || '—'}</td>
             <td>${op.demotedAddress || '—'}</td>
             <td>${op.evictedAddress || '—'}</td>
-            <td><small>${op.description}</small></td>
+            <td><small>${descText}</small></td>
         `;
 
         traceTableBody.insertBefore(tr, traceTableBody.firstChild);
@@ -782,7 +908,8 @@ const App = (function() {
         const res = await apiRequest('/api/reset', 'POST', {
             l1Capacity: currentL1Cap,
             l2Capacity: currentL2Cap,
-            policy: currentPolicy
+            policy: currentPolicy,
+            blockSize: currentBlockSize
         });
         if (res) {
             updateDashboard(res);
@@ -836,7 +963,8 @@ const App = (function() {
         const res = await apiRequest('/api/compare', 'POST', {
             sequence: seq,
             l1Capacity: currentL1Cap,
-            l2Capacity: currentL2Cap
+            l2Capacity: currentL2Cap,
+            blockSize: currentBlockSize
         });
 
         btnRunComparison.disabled = false;
@@ -863,9 +991,16 @@ const App = (function() {
             // Update LFU
             if (res.lfu) {
                 cmpLfuHitRate.textContent = `${res.lfu.overallHitRate.toFixed(1)}%`;
-                cmpLfuMissRate.textContent = `${res.lfu.ramMissRate.toFixed(1)}%`;
+                cmpLfuMissRate.textContent = `${(res.lfu.ramHitRate !== undefined ? res.lfu.ramHitRate : res.lfu.ramMissRate || 0).toFixed(1)}%`;
                 cmpLfuAvgTime.textContent = `${res.lfu.avgAccessTimeNs.toFixed(1)} ns`;
                 cmpLfuEvictions.textContent = res.lfu.totalEvictions;
+            }
+            // Update ADAPTIVE
+            if (res.adaptive) {
+                cmpAdaptiveHitRate.textContent = `${res.adaptive.overallHitRate.toFixed(1)}%`;
+                cmpAdaptiveSwitches.textContent = `${res.adaptiveSwitches || 0} switches`;
+                cmpAdaptiveAvgTime.textContent = `${res.adaptive.avgAccessTimeNs.toFixed(1)} ns`;
+                cmpAdaptiveActivePolicy.textContent = res.adaptiveActivePolicy || 'LRU';
             }
 
             CacheCharts.renderComparison('comparisonChart', res);
@@ -953,7 +1088,23 @@ const App = (function() {
             });
         });
 
-        // Capacity & Delay Selectors
+        // Capacity, Policy, Block Size & Delay Selectors
+        if (selectPolicy) {
+            selectPolicy.addEventListener('change', async (e) => {
+                currentPolicy = e.target.value;
+                await apiRequest('/api/config', 'POST', { policy: currentPolicy });
+                refreshState();
+            });
+        }
+
+        if (selectBlockSize) {
+            selectBlockSize.addEventListener('change', async (e) => {
+                currentBlockSize = parseInt(e.target.value, 10);
+                await apiRequest('/api/config', 'POST', { blockSize: currentBlockSize });
+                refreshState();
+            });
+        }
+
         selectL1Cap.addEventListener('change', async (e) => {
             currentL1Cap = parseInt(e.target.value, 10);
             await apiRequest('/api/config', 'POST', { l1Capacity: currentL1Cap, l2Capacity: currentL2Cap });
@@ -1002,8 +1153,12 @@ const App = (function() {
             currentL1Cap = state.l1Capacity || currentL1Cap;
             currentL2Cap = state.l2Capacity || currentL2Cap;
             currentPolicy = state.policy || currentPolicy;
+            currentBlockSize = state.blockSize || currentBlockSize;
+
             selectL1Cap.value = currentL1Cap.toString();
             selectL2Cap.value = currentL2Cap.toString();
+            if (selectPolicy) selectPolicy.value = currentPolicy;
+            if (selectBlockSize) selectBlockSize.value = currentBlockSize.toString();
             updateDashboard(state);
         }
     }

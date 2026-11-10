@@ -44,8 +44,26 @@ std::string buildFullStateJson(const OperationRecord* lastOp = nullptr) {
     ss << "\"connected\":true,";
     ss << "\"engine\":\"C++ Multi-Level Cache Simulator\",";
     ss << "\"policy\":\"" << JsonHelper::policyToString(g_hierarchy.getPolicy()) << "\",";
+    ss << "\"activePolicy\":\"" << JsonHelper::policyToString(g_hierarchy.getActivePolicy()) << "\",";
+    ss << "\"blockSize\":" << g_hierarchy.getBlockSize() << ",";
     ss << "\"l1Capacity\":" << g_hierarchy.getL1Capacity() << ",";
     ss << "\"l2Capacity\":" << g_hierarchy.getL2Capacity() << ",";
+
+    // Switch log for Adaptive policy
+    const auto& switchLog = g_hierarchy.getSwitchLog();
+    ss << "\"switchCount\":" << switchLog.size() << ",";
+    ss << "\"switchLog\":[";
+    for (size_t i = 0; i < switchLog.size(); ++i) {
+        if (i > 0) ss << ",";
+        ss << "{"
+           << "\"atRequest\":" << switchLog[i].atRequest << ","
+           << "\"from\":\"" << JsonHelper::policyToString(switchLog[i].from) << "\","
+           << "\"to\":\"" << JsonHelper::policyToString(switchLog[i].to) << "\","
+           << "\"lruRate\":" << switchLog[i].lruRate << ","
+           << "\"lfuRate\":" << switchLog[i].lfuRate
+           << "}";
+    }
+    ss << "],";
 
     // Metrics
     auto l1Entries = g_hierarchy.getL1Entries();
@@ -98,16 +116,23 @@ std::string buildFullStateJson(const OperationRecord* lastOp = nullptr) {
     return ss.str();
 }
 
-// Runs comparison of identical sequence across LRU, FIFO, and LFU
-std::string runComparison(const std::vector<std::string>& sequence, size_t l1Cap, size_t l2Cap) {
+// Runs comparison of identical sequence across LRU, FIFO, LFU, and ADAPTIVE
+std::string runComparison(const std::vector<std::string>& sequence, size_t l1Cap, size_t l2Cap, size_t blockSize = 1) {
     MemoryHierarchy simLru(l1Cap, l2Cap, PolicyType::LRU);
     MemoryHierarchy simFifo(l1Cap, l2Cap, PolicyType::FIFO);
     MemoryHierarchy simLfu(l1Cap, l2Cap, PolicyType::LFU);
+    MemoryHierarchy simAdaptive(l1Cap, l2Cap, PolicyType::ADAPTIVE);
+
+    simLru.setBlockSize(blockSize);
+    simFifo.setBlockSize(blockSize);
+    simLfu.setBlockSize(blockSize);
+    simAdaptive.setBlockSize(blockSize);
 
     for (const auto& addr : sequence) {
         simLru.request(addr);
         simFifo.request(addr);
         simLfu.request(addr);
+        simAdaptive.request(addr);
     }
 
     std::ostringstream ss;
@@ -116,13 +141,18 @@ std::string runComparison(const std::vector<std::string>& sequence, size_t l1Cap
     ss << "\"sequenceLength\":" << sequence.size() << ",";
     ss << "\"l1Capacity\":" << l1Cap << ",";
     ss << "\"l2Capacity\":" << l2Cap << ",";
+    ss << "\"blockSize\":" << blockSize << ",";
     
     // LRU
     ss << "\"lru\":" << JsonHelper::metricsToJson(simLru.getMetrics(), l1Cap, l2Cap, simLru.getL1Entries().size(), simLru.getL2Entries().size()) << ",";
     // FIFO
     ss << "\"fifo\":" << JsonHelper::metricsToJson(simFifo.getMetrics(), l1Cap, l2Cap, simFifo.getL1Entries().size(), simFifo.getL2Entries().size()) << ",";
     // LFU
-    ss << "\"lfu\":" << JsonHelper::metricsToJson(simLfu.getMetrics(), l1Cap, l2Cap, simLfu.getL1Entries().size(), simLfu.getL2Entries().size());
+    ss << "\"lfu\":" << JsonHelper::metricsToJson(simLfu.getMetrics(), l1Cap, l2Cap, simLfu.getL1Entries().size(), simLfu.getL2Entries().size()) << ",";
+    // ADAPTIVE
+    ss << "\"adaptive\":" << JsonHelper::metricsToJson(simAdaptive.getMetrics(), l1Cap, l2Cap, simAdaptive.getL1Entries().size(), simAdaptive.getL2Entries().size()) << ",";
+    ss << "\"adaptiveSwitches\":" << simAdaptive.getSwitchLog().size() << ",";
+    ss << "\"adaptiveActivePolicy\":\"" << JsonHelper::policyToString(simAdaptive.getActivePolicy()) << "\"";
 
     ss << "}";
     return ss.str();
@@ -172,7 +202,6 @@ void handleClient(SOCKET clientSocket) {
     char buffer[4096];
     int bytesReceived = 0;
 
-    // Read until headers end
     size_t headerEnd = std::string::npos;
     while ((bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0)) > 0) {
         request.append(buffer, bytesReceived);
@@ -185,18 +214,15 @@ void handleClient(SOCKET clientSocket) {
         return;
     }
 
-    // Extract method and path
     std::istringstream reqStream(request);
     std::string method, path, version;
     reqStream >> method >> path >> version;
 
-    // Handle OPTIONS for CORS pre-flight
     if (method == "OPTIONS") {
         sendHttpResponse(clientSocket, 200, "text/plain", "");
         return;
     }
 
-    // Check Content-Length for POST body
     size_t contentLength = 0;
     size_t clPos = request.find("Content-Length:");
     if (clPos == std::string::npos) {
@@ -212,7 +238,6 @@ void handleClient(SOCKET clientSocket) {
         }
     }
 
-    // Read remaining body if not fully received
     size_t bodyStart = headerEnd + 4;
     while (request.size() - bodyStart < contentLength) {
         bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
@@ -225,7 +250,6 @@ void handleClient(SOCKET clientSocket) {
         body = request.substr(bodyStart, contentLength);
     }
 
-    // Strip URL query parameters
     size_t queryPos = path.find('?');
     if (queryPos != std::string::npos) {
         path = path.substr(0, queryPos);
@@ -267,8 +291,12 @@ void handleClient(SOCKET clientSocket) {
         int l1Cap = JsonHelper::extractIntField(body, "l1Capacity", 4);
         int l2Cap = JsonHelper::extractIntField(body, "l2Capacity", 8);
         std::string policyStr = JsonHelper::extractStringField(body, "policy");
+        int blockSize = JsonHelper::extractIntField(body, "blockSize", 1);
         
         std::lock_guard<std::mutex> lock(g_engineMutex);
+        if (blockSize > 0) {
+            g_hierarchy.setBlockSize(blockSize);
+        }
         if (!policyStr.empty()) {
             g_hierarchy.setPolicy(JsonHelper::stringToPolicy(policyStr));
         }
@@ -281,9 +309,13 @@ void handleClient(SOCKET clientSocket) {
     if (path == "/api/config" && method == "POST") {
         int l1Cap = JsonHelper::extractIntField(body, "l1Capacity", 0);
         int l2Cap = JsonHelper::extractIntField(body, "l2Capacity", 0);
+        int blockSize = JsonHelper::extractIntField(body, "blockSize", 0);
         std::string policyStr = JsonHelper::extractStringField(body, "policy");
 
         std::lock_guard<std::mutex> lock(g_engineMutex);
+        if (blockSize > 0) {
+            g_hierarchy.setBlockSize(blockSize);
+        }
         if (!policyStr.empty()) {
             g_hierarchy.setPolicy(JsonHelper::stringToPolicy(policyStr));
         }
@@ -299,13 +331,13 @@ void handleClient(SOCKET clientSocket) {
         std::vector<std::string> seq = JsonHelper::extractStringArray(body, "sequence");
         int l1Cap = JsonHelper::extractIntField(body, "l1Capacity", 4);
         int l2Cap = JsonHelper::extractIntField(body, "l2Capacity", 8);
+        int blockSize = JsonHelper::extractIntField(body, "blockSize", 1);
 
         if (seq.empty()) {
-            // Default sample benchmark trace if empty
             seq = {"0x1000", "0x2000", "0x3000", "0x4000", "0x1000", "0x5000", "0x2000", "0x6000", "0x1000", "0x7000"};
         }
 
-        std::string json = runComparison(seq, l1Cap, l2Cap);
+        std::string json = runComparison(seq, l1Cap, l2Cap, blockSize);
         sendHttpResponse(clientSocket, 200, "application/json", json);
         return;
     }
@@ -315,13 +347,11 @@ void handleClient(SOCKET clientSocket) {
         path = "/index.html";
     }
 
-    // Resolve file on disk
     std::string filePath = g_frontendDir + path;
     std::string fileContent;
     if (readFile(filePath, fileContent)) {
         sendHttpResponse(clientSocket, 200, getMimeType(filePath), fileContent);
     } else {
-        // Try fallback without frontend prefix
         if (readFile("." + path, fileContent)) {
             sendHttpResponse(clientSocket, 200, getMimeType(path), fileContent);
         } else {
@@ -337,7 +367,6 @@ int main(int argc, char* argv[]) {
         if (port <= 0) port = 8080;
     }
 
-    // Check if frontend directory exists relative to current path
     std::ifstream testFrontend("./frontend/index.html");
     if (!testFrontend.is_open()) {
         std::ifstream testFrontendUp("../frontend/index.html");
@@ -385,6 +414,7 @@ int main(int argc, char* argv[]) {
     std::cout << "========================================================\n";
     std::cout << "  CACHEFLOW C++ Engine Server Active on http://localhost:" << port << "\n";
     std::cout << "  DSA Hierarchy: L1 Cache (4) -> L2 Cache (8) -> RAM\n";
+    std::cout << "  Adaptive Intelligence: Enabled (LRU <-> LFU Auto-Switch)\n";
     std::cout << "  Serving GUI from: " << g_frontendDir << "\n";
     std::cout << "========================================================\n" << std::flush;
 
@@ -396,7 +426,6 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        // Process request in a detached thread for concurrency
         std::thread([clientSocket]() {
             handleClient(clientSocket);
         }).detach();

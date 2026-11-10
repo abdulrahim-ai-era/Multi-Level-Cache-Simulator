@@ -5,19 +5,27 @@
 #include <vector>
 #include <cstdint>
 
-// Eviction policy types
+// Eviction policy types: includes ADAPTIVE (auto-switches between LRU and LFU)
 enum class PolicyType {
     LRU,
     FIFO,
-    LFU
+    LFU,
+    ADAPTIVE
 };
 
-// Access outcome
+// Access outcome: changed from RAM_MISS to RAM_HIT (RAM Found)
 enum class AccessResult {
     L1_HIT,
     L2_HIT,
-    RAM_MISS
+    RAM_HIT
 };
+
+inline std::string policyName(PolicyType p) {
+    if (p == PolicyType::FIFO) return "FIFO";
+    if (p == PolicyType::LFU) return "LFU";
+    if (p == PolicyType::ADAPTIVE) return "ADAPTIVE";
+    return "LRU";
+}
 
 // Cache entry representation
 struct CacheEntry {
@@ -40,6 +48,15 @@ struct Node {
     Node(const CacheEntry& e) : entry(e), prev(nullptr), next(nullptr) {}
 };
 
+// Event when Adaptive policy switches its underlying active policy
+struct SwitchEvent {
+    uint64_t atRequest;
+    PolicyType from;
+    PolicyType to;
+    double lruRate;
+    double lfuRate;
+};
+
 // Operation record for tracing and GUI animation
 struct OperationRecord {
     std::string address;
@@ -49,6 +66,7 @@ struct OperationRecord {
     std::string promotedAddress;
     std::string demotedAddress;
     std::string evictedAddress;
+    std::string policySwitch;
     std::vector<std::string> movementBreadcrumb;
 };
 
@@ -57,12 +75,12 @@ struct CacheMetrics {
     uint64_t totalRequests;
     uint64_t l1Hits;
     uint64_t l2Hits;
-    uint64_t ramMisses;
+    uint64_t ramHits; // RAM Found
     uint64_t totalEvictions;
     double totalAccessTimeNs;
 
     CacheMetrics()
-        : totalRequests(0), l1Hits(0), l2Hits(0), ramMisses(0),
+        : totalRequests(0), l1Hits(0), l2Hits(0), ramHits(0),
           totalEvictions(0), totalAccessTimeNs(0.0) {}
 
     double getOverallHitRate() const {
@@ -80,9 +98,9 @@ struct CacheMetrics {
         return (static_cast<double>(l2Hits) / totalRequests) * 100.0;
     }
 
-    double getRamMissRate() const {
+    double getRamHitRate() const {
         if (totalRequests == 0) return 0.0;
-        return (static_cast<double>(ramMisses) / totalRequests) * 100.0;
+        return (static_cast<double>(ramHits) / totalRequests) * 100.0;
     }
 
     double getAvgAccessTime() const {
@@ -103,4 +121,3 @@ struct CacheMetrics {
 };
 
 #endif // CACHE_TYPES_H
-

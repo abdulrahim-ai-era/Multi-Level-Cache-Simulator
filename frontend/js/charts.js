@@ -148,29 +148,44 @@ const CacheCharts = (function() {
             { name: 'LFU', color: '#A855F7', data: cmpData.lfu }
         ];
 
+        if (cmpData.adaptive) {
+            policies.push({ name: 'ADAPTIVE', color: '#00D9FF', data: cmpData.adaptive });
+        }
+
         // Draw hit rate comparison bars
         const groupWidth = chartW / 3;
-        const barWidth = 26;
+        const barCount = policies.length;
+        const barWidth = barCount === 4 ? 20 : 26;
+        const barGap = 4;
+        const totalBarsWidth = barCount * barWidth + (barCount - 1) * barGap;
+
+        const maxEvictions = Math.max(
+            cmpData.lru ? cmpData.lru.totalEvictions : 0,
+            cmpData.fifo ? cmpData.fifo.totalEvictions : 0,
+            cmpData.lfu ? cmpData.lfu.totalEvictions : 0,
+            cmpData.adaptive ? cmpData.adaptive.totalEvictions : 0,
+            5
+        );
 
         const metricsList = [
             { key: 'overallHitRate', label: 'Overall Hit Rate (%)', max: 100 },
             { key: 'avgAccessTimeNs', label: 'Avg Latency (ns)', max: 110 },
-            { key: 'totalEvictions', label: 'Total Evictions', max: Math.max(cmpData.lru.totalEvictions, cmpData.fifo.totalEvictions, cmpData.lfu.totalEvictions, 5) }
+            { key: 'totalEvictions', label: 'Total Evictions', max: maxEvictions }
         ];
 
         metricsList.forEach((metric, mIdx) => {
-            const groupX = padLeft + mIdx * groupWidth + (groupWidth - (barWidth * 3 + 16)) / 2;
+            const groupX = padLeft + mIdx * groupWidth + (groupWidth - totalBarsWidth) / 2;
 
             // Metric label
             ctx.fillStyle = '#8B9BB4';
             ctx.font = '11px "Inter", sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText(metric.label, groupX + (barWidth * 3 + 16) / 2, height - 12);
+            ctx.fillText(metric.label, groupX + totalBarsWidth / 2, height - 12);
 
             policies.forEach((p, pIdx) => {
-                const val = p.data[metric.key] || 0;
+                const val = p.data ? (p.data[metric.key] || 0) : 0;
                 const barH = (val / metric.max) * (chartH - 20);
-                const x = groupX + pIdx * (barWidth + 6);
+                const x = groupX + pIdx * (barWidth + barGap);
                 const y = padTop + chartH - barH;
 
                 // Bar
@@ -181,9 +196,9 @@ const CacheCharts = (function() {
 
                 // Value on top
                 ctx.fillStyle = '#FFFFFF';
-                ctx.font = '10px "JetBrains Mono", monospace';
+                ctx.font = '9px "JetBrains Mono", monospace';
                 ctx.textAlign = 'center';
-                const formattedVal = metric.key === 'overallHitRate' ? `${val.toFixed(1)}%` : (metric.key === 'avgAccessTimeNs' ? `${val.toFixed(1)}` : `${val}`);
+                const formattedVal = metric.key === 'overallHitRate' ? `${val.toFixed(0)}%` : (metric.key === 'avgAccessTimeNs' ? `${val.toFixed(1)}` : `${val}`);
                 ctx.fillText(formattedVal, x + barWidth / 2, y - 6);
             });
         });

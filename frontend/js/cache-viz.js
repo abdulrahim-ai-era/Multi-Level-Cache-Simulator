@@ -137,7 +137,7 @@ const CacheViz = (function() {
                 highlightAddressSlot('blue', op.address);
                 // Promotion animation: transfer from L2 towards L1
                 animateConnector(connectorL1L2, 'left');
-            } else if (op.result === 'RAM_MISS') {
+            } else if (op.result === 'RAM_HIT' || op.result === 'RAM_MISS') {
                 triggerModulePulse(moduleRAM);
                 highlightAddressSlot('violet', op.address);
                 // RAM fetch animation

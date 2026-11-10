@@ -6,17 +6,29 @@
 #include <string>
 #include <vector>
 #include <deque>
+#include <memory>
 #include <sstream>
 #include <iomanip>
+#include <algorithm>
+
+inline std::string fmt1(double v) {
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(1) << v;
+    return ss.str();
+}
 
 /**
  * Multi-Level Memory Hierarchy Simulator.
  * Simulates CPU Request -> L1 Cache -> L2 Cache -> RAM.
- * Maintains exclusive placement, handling realistic promotions, demotions,
- * and eviction cascades between hierarchy levels.
+ * Supports LRU, FIFO, LFU, and ADAPTIVE (automatic dynamic switching).
  */
 class MemoryHierarchy {
 private:
+    static constexpr double L1_LATENCY = 1.0;
+    static constexpr double L2_LATENCY = 4.0;
+    static constexpr double RAM_LATENCY = 100.0;
+    static constexpr uint64_t ADAPT_WINDOW = 200;
+
     CacheLevel l1_;
     CacheLevel l2_;
     CacheMetrics metrics_;
@@ -25,94 +37,80 @@ private:
     std::deque<std::string> ramRecentAddresses_;
     std::vector<OperationRecord> history_;
 
-    // Latency constants (in nanoseconds)
-    const double L1_LATENCY = 1.0;
-    const double L2_LATENCY = 4.0;   // L1 (1) + L2 (4) = 5 ns total
-    const double RAM_LATENCY = 100.0; // Total 105 ns on RAM miss
+    // Adaptive policy shadow simulation
+    std::unique_ptr<MemoryHierarchy> shadowLru_;
+    std::unique_ptr<MemoryHierarchy> shadowLfu_;
+    uint64_t windowRequests_;
+    uint64_t lruWindowStartHits_;
+    uint64_t lfuWindowStartHits_;
+    std::vector<SwitchEvent> switchLog_;
+    size_t blockSize_;
 
-public:
-    MemoryHierarchy(size_t l1Cap = 4, size_t l2Cap = 8, PolicyType policy = PolicyType::LRU)
-        : l1_("L1 Cache", l1Cap, policy, L1_LATENCY),
-          l2_("L2 Cache", l2Cap, policy, L2_LATENCY),
-          policy_(policy),
-          simulatedTimeStep_(0) {
-        initRam();
+    static PolicyType concrete(PolicyType p) {
+        return (p == PolicyType::ADAPTIVE) ? PolicyType::LRU : p;
     }
 
-    void initRam() {
-        ramRecentAddresses_.clear();
-        // Seed default representative RAM memory blocks as shown in reference design
-        ramRecentAddresses_.push_back("0x0000");
-        ramRecentAddresses_.push_back("0x1000");
-        ramRecentAddresses_.push_back("0x2000");
-        ramRecentAddresses_.push_back("0x3000");
-    }
-
-    void reset(size_t l1Cap = 0, size_t l2Cap = 0) {
-        if (l1Cap > 0) l1_.setCapacity(l1Cap);
-        if (l2Cap > 0) l2_.setCapacity(l2Cap);
-        l1_.clear();
-        l2_.clear();
-        metrics_ = CacheMetrics();
-        simulatedTimeStep_ = 0;
-        history_.clear();
-        initRam();
-    }
-
-    void setPolicy(PolicyType p) {
-        policy_ = p;
+    void applyActive(PolicyType p) {
         l1_.setPolicy(p);
         l2_.setPolicy(p);
     }
 
-    PolicyType getPolicy() const { return policy_; }
-    size_t getL1Capacity() const { return l1_.getCapacity(); }
-    size_t getL2Capacity() const { return l2_.getCapacity(); }
-
-    void setCapacities(size_t l1Cap, size_t l2Cap) {
-        if (l1Cap > 0) l1_.setCapacity(l1Cap);
-        if (l2Cap > 0) l2_.setCapacity(l2Cap);
+    void setupAdaptive() {
+        shadowLru_.reset(new MemoryHierarchy(l1_.getCapacity(), l2_.getCapacity(), PolicyType::LRU));
+        shadowLfu_.reset(new MemoryHierarchy(l1_.getCapacity(), l2_.getCapacity(), PolicyType::LFU));
+        windowRequests_ = 0;
+        lruWindowStartHits_ = 0;
+        lfuWindowStartHits_ = 0;
+        switchLog_.clear();
     }
 
-    // Normalizes address string to standardized hexadecimal representation (e.g. 0x3A1F)
-    static std::string normalizeAddress(const std::string& raw) {
-        std::string s = raw;
-        // Trim leading and trailing whitespace
-        size_t first = s.find_first_not_of(" \t\r\n");
-        if (first == std::string::npos) return "";
-        size_t last = s.find_last_not_of(" \t\r\n");
-        s = s.substr(first, (last - first + 1));
-
-        // Check for 0x prefix
-        if (s.size() >= 2 && (s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))) {
-            s = s.substr(2);
+    std::string toBlockAddress(const std::string& addr) const {
+        if (blockSize_ <= 1) return addr;
+        unsigned long long v = 0;
+        try {
+            v = std::stoull(addr.substr(2), nullptr, 16);
+        } catch (...) {
+            return addr;
         }
-
-        // Convert hex digits to uppercase
-        for (char& c : s) {
-            c = static_cast<char>(std::toupper(c));
-        }
-
-        // Pad to at least 4 hex digits if practical
-        while (s.size() < 4) {
-            s = "0" + s;
-        }
-
-        return "0x" + s;
+        v -= v % blockSize_;
+        std::ostringstream ss;
+        ss << "0x" << std::uppercase << std::hex << std::setw(4) << std::setfill('0') << v;
+        return ss.str();
     }
 
-    // Process a single memory request
-    OperationRecord request(const std::string& rawAddress) {
-        std::string addr = normalizeAddress(rawAddress);
-        if (addr.empty()) {
-            OperationRecord emptyOp;
-            emptyOp.address = "0x0000";
-            emptyOp.result = AccessResult::RAM_MISS;
-            emptyOp.accessTimeNs = 0.0;
-            emptyOp.description = "Invalid address entered";
-            return emptyOp;
-        }
+    void adaptiveStep(const std::string& addr, OperationRecord& op) {
+        if (!shadowLru_ || !shadowLfu_) return;
+        shadowLru_->request(addr);
+        shadowLfu_->request(addr);
+        windowRequests_++;
+        if (windowRequests_ < ADAPT_WINDOW) return;
 
+        const CacheMetrics& a = shadowLru_->getMetrics();
+        const CacheMetrics& b = shadowLfu_->getMetrics();
+        uint64_t lruHits = a.l1Hits + a.l2Hits;
+        uint64_t lfuHits = b.l1Hits + b.l2Hits;
+        double lruRate = static_cast<double>(lruHits - lruWindowStartHits_) * 100.0 / ADAPT_WINDOW;
+        double lfuRate = static_cast<double>(lfuHits - lfuWindowStartHits_) * 100.0 / ADAPT_WINDOW;
+        lruWindowStartHits_ = lruHits;
+        lfuWindowStartHits_ = lfuHits;
+        windowRequests_ = 0;
+
+        PolicyType current = l1_.getPolicy();
+        PolicyType winner = current;
+        if (lruRate > lfuRate) winner = PolicyType::LRU;
+        else if (lfuRate > lruRate) winner = PolicyType::LFU;
+
+        if (winner != current) {
+            SwitchEvent ev = {simulatedTimeStep_, current, winner, lruRate, lfuRate};
+            switchLog_.push_back(ev);
+            applyActive(winner);
+            op.policySwitch = "Adaptive switch at request " + std::to_string(simulatedTimeStep_) + ": " +
+                              policyName(current) + " -> " + policyName(winner) +
+                              " (LRU " + fmt1(lruRate) + "% vs LFU " + fmt1(lfuRate) + "%)";
+        }
+    }
+
+    OperationRecord process(const std::string& addr) {
         simulatedTimeStep_++;
         metrics_.totalRequests++;
 
@@ -142,18 +140,15 @@ public:
             double time = L1_LATENCY + L2_LATENCY; // 5.0 ns
             metrics_.totalAccessTimeNs += time;
 
-            // Remove from L2 so it can be promoted exclusively to L1
             l2_.remove(addr, &l2FoundEntry);
             l2FoundEntry.frequency++;
             l2FoundEntry.lastAccessTime = simulatedTimeStep_;
             op.promotedAddress = addr;
 
-            // Promote to L1. If L1 is full, demote L1's LRU to L2!
             CacheEntry l1Evicted;
             bool l1Demoted = l1_.insert(l2FoundEntry, &l1Evicted);
             if (l1Demoted) {
                 op.demotedAddress = l1Evicted.address;
-                // Insert demoted entry into L2
                 CacheEntry l2Evicted;
                 bool l2EvictedFlag = l2_.insert(l1Evicted, &l2Evicted);
                 if (l2EvictedFlag) {
@@ -171,15 +166,13 @@ public:
             return op;
         }
 
-        // 3. Cache Miss - Backing Memory (RAM) Access
-        metrics_.ramMisses++;
+        // 3. Cache Miss - Backing Memory (RAM Found / RAM Hit)
+        metrics_.ramHits++;
         double time = L1_LATENCY + L2_LATENCY + RAM_LATENCY; // 105.0 ns
         metrics_.totalAccessTimeNs += time;
 
-        // Create new entry fetched from RAM
         CacheEntry fetched(addr, 0, simulatedTimeStep_);
 
-        // Record in RAM recently accessed
         bool alreadyInRamList = false;
         for (const auto& r : ramRecentAddresses_) {
             if (r == addr) {
@@ -194,12 +187,10 @@ public:
             }
         }
 
-        // Insert into L1
         CacheEntry l1Evicted;
         bool l1Demoted = l1_.insert(fetched, &l1Evicted);
         if (l1Demoted) {
             op.demotedAddress = l1Evicted.address;
-            // Demote into L2
             CacheEntry l2Evicted;
             bool l2EvictedFlag = l2_.insert(l1Evicted, &l2Evicted);
             if (l2EvictedFlag) {
@@ -208,12 +199,114 @@ public:
             }
         }
 
-        op.result = AccessResult::RAM_MISS;
+        op.result = AccessResult::RAM_HIT;
         op.accessTimeNs = time;
-        op.description = "Address " + addr + " was absent from both cache levels and required a RAM access.";
-        op.movementBreadcrumb = {"L1 Miss", "L2 Miss", "RAM Fetch"};
+        op.description = "Address " + addr + " was not in L1 or L2, so it was fetched from RAM (RAM Found).";
+        op.movementBreadcrumb = {"L1 Miss", "L2 Miss", "RAM Found"};
 
         history_.push_back(op);
+        return op;
+    }
+
+public:
+    MemoryHierarchy(size_t l1Cap = 4, size_t l2Cap = 8, PolicyType policy = PolicyType::LRU)
+        : l1_("L1 Cache", l1Cap, concrete(policy), L1_LATENCY),
+          l2_("L2 Cache", l2Cap, concrete(policy), L2_LATENCY),
+          policy_(policy),
+          simulatedTimeStep_(0),
+          windowRequests_(0),
+          lruWindowStartHits_(0),
+          lfuWindowStartHits_(0),
+          blockSize_(1) {
+        initRam();
+        if (policy_ == PolicyType::ADAPTIVE) setupAdaptive();
+    }
+
+    void initRam() {
+        ramRecentAddresses_.clear();
+        ramRecentAddresses_.push_back("0x0000");
+        ramRecentAddresses_.push_back("0x1000");
+        ramRecentAddresses_.push_back("0x2000");
+        ramRecentAddresses_.push_back("0x3000");
+    }
+
+    void reset(size_t l1Cap = 0, size_t l2Cap = 0) {
+        if (l1Cap > 0) l1_.setCapacity(l1Cap);
+        if (l2Cap > 0) l2_.setCapacity(l2Cap);
+        l1_.clear();
+        l2_.clear();
+        metrics_ = CacheMetrics();
+        simulatedTimeStep_ = 0;
+        history_.clear();
+        initRam();
+        applyActive(concrete(policy_));
+        if (policy_ == PolicyType::ADAPTIVE) setupAdaptive();
+    }
+
+    void setPolicy(PolicyType p) {
+        policy_ = p;
+        applyActive(concrete(p));
+        if (p == PolicyType::ADAPTIVE) {
+            setupAdaptive();
+        } else {
+            shadowLru_.reset();
+            shadowLfu_.reset();
+            switchLog_.clear();
+        }
+    }
+
+    void setBlockSize(size_t b) {
+        blockSize_ = (b > 0) ? b : 1;
+    }
+
+    PolicyType getPolicy() const { return policy_; }
+    PolicyType getActivePolicy() const { return l1_.getPolicy(); }
+    size_t getBlockSize() const { return blockSize_; }
+    size_t getL1Capacity() const { return l1_.getCapacity(); }
+    size_t getL2Capacity() const { return l2_.getCapacity(); }
+    const std::vector<SwitchEvent>& getSwitchLog() const { return switchLog_; }
+
+    void setCapacities(size_t l1Cap, size_t l2Cap) {
+        if (l1Cap > 0) l1_.setCapacity(l1Cap);
+        if (l2Cap > 0) l2_.setCapacity(l2Cap);
+    }
+
+    static std::string normalizeAddress(const std::string& raw) {
+        std::string s = raw;
+        size_t first = s.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) return "";
+        size_t last = s.find_last_not_of(" \t\r\n");
+        s = s.substr(first, (last - first + 1));
+
+        if (s.size() >= 2 && (s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))) {
+            s = s.substr(2);
+        }
+
+        for (char& c : s) {
+            c = static_cast<char>(std::toupper(c));
+        }
+
+        while (s.size() < 4) {
+            s = "0" + s;
+        }
+
+        return "0x" + s;
+    }
+
+    OperationRecord request(const std::string& rawAddress) {
+        std::string addr = normalizeAddress(rawAddress);
+        if (addr.empty()) {
+            OperationRecord emptyOp;
+            emptyOp.address = "0x0000";
+            emptyOp.result = AccessResult::RAM_HIT;
+            emptyOp.accessTimeNs = 0.0;
+            emptyOp.description = "Invalid address entered";
+            return emptyOp;
+        }
+
+        addr = toBlockAddress(addr);
+        OperationRecord op = process(addr);
+        if (policy_ == PolicyType::ADAPTIVE) adaptiveStep(addr, op);
         return op;
     }
 
@@ -239,4 +332,3 @@ public:
 };
 
 #endif // MEMORY_HIERARCHY_H
-
