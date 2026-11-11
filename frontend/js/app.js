@@ -956,12 +956,42 @@ const App = (function() {
 
     async function runMultiPolicyBenchmark() {
         btnRunComparison.disabled = true;
-        btnRunComparison.textContent = 'Running Benchmark in C++...';
+        btnRunComparison.textContent = 'Building Benchmark Sequence...';
 
-        const seq = sequenceQueue.length > 0 ? sequenceQueue : ['0x1000', '0x2000', '0x3000', '0x4000', '0x1000', '0x5000', '0x2000', '0x6000', '0x1000', '0x7000'];
+        // ── Build a benchmark sequence that EXPOSES policy differences ──────────
+        // Problem: if all unique addresses fit inside L1+L2, every policy behaves
+        // identically (no eviction from L2 ever happens).
+        // Fix:
+        //   1. Collect the user's sequence (or a default one).
+        //   2. Append "flood" addresses so we EXCEED L1+L2 total capacity.
+        //   3. Repeat the hot addresses so LFU's frequency counters diverge from LRU/FIFO.
+        //   4. Ensure ≥ 300 total requests so ADAPTIVE's 200-request window can fire.
+
+        const baseSeq = sequenceQueue.length > 0
+            ? [...sequenceQueue]
+            : ['0x1000','0x2000','0x3000','0x4000','0x1000','0x5000','0x2000','0x6000','0x1000','0x7000'];
+
+        const totalCap = currentL1Cap + currentL2Cap;
+        const uniqueInBase = [...new Set(baseSeq)];
+
+        // Add flood addresses to push total unique count beyond L1+L2 capacity
+        const floodAddrs = [];
+        for (let i = uniqueInBase.length; i < totalCap + 6; i++) {
+            floodAddrs.push(`0x${((i + 1) * 0x1000).toString(16).toUpperCase().padStart(4, '0')}`);
+        }
+
+        // Pattern: [base + flood] fills & overflows cache; [base × 3] shows recency/frequency differences
+        let benchSeq = [...baseSeq, ...floodAddrs, ...baseSeq, ...baseSeq, ...baseSeq];
+
+        // Pad to ≥ 300 so ADAPTIVE window (200 req) fires at least once
+        while (benchSeq.length < 300) {
+            benchSeq = [...benchSeq, ...baseSeq];
+        }
+
+        btnRunComparison.textContent = `Running ${benchSeq.length} requests across 4 policies...`;
 
         const res = await apiRequest('/api/compare', 'POST', {
-            sequence: seq,
+            sequence: benchSeq,
             l1Capacity: currentL1Cap,
             l2Capacity: currentL2Cap,
             blockSize: currentBlockSize
@@ -974,24 +1004,31 @@ const App = (function() {
         `;
 
         if (res) {
+            // Show how many requests were benchmarked
+            const benchLen = benchSeq ? benchSeq.length : (res.sequenceLength || '?');
+            const benchInfo = document.getElementById('benchmarkInfoLabel');
+            if (benchInfo) {
+                benchInfo.textContent = `Benchmarked ${benchLen} requests (L1=${currentL1Cap}, L2=${currentL2Cap}, Block=${currentBlockSize})`;
+                benchInfo.style.display = 'block';
+            }
             // Update LRU
             if (res.lru) {
                 cmpLruHitRate.textContent = `${res.lru.overallHitRate.toFixed(1)}%`;
-                cmpLruMissRate.textContent = `${res.lru.ramMissRate.toFixed(1)}%`;
+                cmpLruMissRate.textContent = `${(res.lru.ramMissRate ?? res.lru.ramHitRate ?? 0).toFixed(1)}%`;
                 cmpLruAvgTime.textContent = `${res.lru.avgAccessTimeNs.toFixed(1)} ns`;
                 cmpLruEvictions.textContent = res.lru.totalEvictions;
             }
             // Update FIFO
             if (res.fifo) {
                 cmpFifoHitRate.textContent = `${res.fifo.overallHitRate.toFixed(1)}%`;
-                cmpFifoMissRate.textContent = `${res.fifo.ramMissRate.toFixed(1)}%`;
+                cmpFifoMissRate.textContent = `${(res.fifo.ramMissRate ?? res.fifo.ramHitRate ?? 0).toFixed(1)}%`;
                 cmpFifoAvgTime.textContent = `${res.fifo.avgAccessTimeNs.toFixed(1)} ns`;
                 cmpFifoEvictions.textContent = res.fifo.totalEvictions;
             }
             // Update LFU
             if (res.lfu) {
                 cmpLfuHitRate.textContent = `${res.lfu.overallHitRate.toFixed(1)}%`;
-                cmpLfuMissRate.textContent = `${(res.lfu.ramHitRate !== undefined ? res.lfu.ramHitRate : res.lfu.ramMissRate || 0).toFixed(1)}%`;
+                cmpLfuMissRate.textContent = `${(res.lfu.ramMissRate ?? res.lfu.ramHitRate ?? 0).toFixed(1)}%`;
                 cmpLfuAvgTime.textContent = `${res.lfu.avgAccessTimeNs.toFixed(1)} ns`;
                 cmpLfuEvictions.textContent = res.lfu.totalEvictions;
             }
