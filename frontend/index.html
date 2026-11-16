@@ -177,6 +177,41 @@
                     </div>
                 </div>
 
+                <!-- ADAPTIVE POLICY LIVE CONTROLLER & MONITOR BANNER -->
+                <div class="adaptive-status-banner" id="adaptiveStatusBanner">
+                    <div class="adaptive-banner-left">
+                        <div class="adaptive-banner-title-row">
+                            <span class="adaptive-pulse-dot"></span>
+                            <span class="adaptive-banner-title">⚡ ADAPTIVE POLICY AUTO-DECISION ENGINE</span>
+                            <span class="adaptive-active-pill pill-lru" id="overviewAdaptiveActive">ACTIVE: LRU</span>
+                        </div>
+                        <div class="adaptive-banner-meta">
+                            <span class="adaptive-meta-item">
+                                <span class="meta-label">Total Policy Switches:</span>
+                                <strong class="meta-val highlight-cyan" id="overviewAdaptiveSwitches">0</strong>
+                            </span>
+                            <span class="meta-separator">•</span>
+                            <span class="adaptive-meta-item">
+                                <span class="meta-label">Window Progress:</span>
+                                <strong class="meta-val" id="overviewAdaptiveWindow">0 / 200 ops</strong>
+                            </span>
+                            <span class="meta-separator">•</span>
+                            <span class="adaptive-meta-item">
+                                <span class="meta-label">Window Evaluation:</span>
+                                <strong class="meta-val highlight-gold" id="overviewAdaptiveEvaluation">Awaiting 200 ops</strong>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="adaptive-banner-right">
+                        <button class="btn btn-action-adaptive pulse-glow" id="btnFeed200Banner" title="Automatically feed 200 memory operations to test Adaptive policy switching">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                            </svg>
+                            <span>⚡ Feed +200 Ops (Adaptive Step)</span>
+                        </button>
+                    </div>
+                </div>
+
                 <!-- MAIN WORKSPACE: CACHE HIERARCHY & REQUEST SIMULATOR -->
                 <div class="workspace-grid">
                     <!-- CENTRAL CACHE HIERARCHY VISUALIZATION -->
@@ -368,6 +403,16 @@
                                         <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
                                     </svg>
                                     <span>Reset</span>
+                                </button>
+                            </div>
+
+                            <!-- Dedicated Adaptive Quick-Feed Action -->
+                            <div class="adaptive-feed-action-wrap" style="margin-top: 8px;">
+                                <button class="btn btn-action-adaptive btn-block-feed" id="btnFeed200" title="Automatically feed 200 memory operations to test Adaptive policy switching">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                                    </svg>
+                                    <span>⚡ Feed +200 Ops (Adaptive Step)</span>
                                 </button>
                             </div>
 

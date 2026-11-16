@@ -43,6 +43,8 @@ private:
     uint64_t windowRequests_;
     uint64_t lruWindowStartHits_;
     uint64_t lfuWindowStartHits_;
+    double lastLruRate_;
+    double lastLfuRate_;
     std::vector<SwitchEvent> switchLog_;
     size_t blockSize_;
 
@@ -61,6 +63,8 @@ private:
         windowRequests_ = 0;
         lruWindowStartHits_ = 0;
         lfuWindowStartHits_ = 0;
+        lastLruRate_ = 0.0;
+        lastLfuRate_ = 0.0;
         switchLog_.clear();
     }
 
@@ -93,6 +97,8 @@ private:
         double lfuRate = static_cast<double>(lfuHits - lfuWindowStartHits_) * 100.0 / ADAPT_WINDOW;
         lruWindowStartHits_ = lruHits;
         lfuWindowStartHits_ = lfuHits;
+        lastLruRate_ = lruRate;
+        lastLfuRate_ = lfuRate;
         windowRequests_ = 0;
 
         PolicyType current = l1_.getPolicy();
@@ -265,6 +271,9 @@ public:
     size_t getL1Capacity() const { return l1_.getCapacity(); }
     size_t getL2Capacity() const { return l2_.getCapacity(); }
     const std::vector<SwitchEvent>& getSwitchLog() const { return switchLog_; }
+    uint64_t getWindowRequests() const { return windowRequests_; }
+    double getLastLruRate() const { return lastLruRate_; }
+    double getLastLfuRate() const { return lastLfuRate_; }
 
     void setCapacities(size_t l1Cap, size_t l2Cap) {
         if (l1Cap > 0) l1_.setCapacity(l1Cap);

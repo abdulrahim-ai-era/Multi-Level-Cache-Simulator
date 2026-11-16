@@ -56,6 +56,15 @@ const App = (function() {
     const selectPolicy = document.getElementById('selectPolicy');
     const selectBlockSize = document.getElementById('selectBlockSize');
 
+    // Adaptive Live Display & Quick Feed Elements
+    const btnFeed200 = document.getElementById('btnFeed200');
+    const btnFeed200Banner = document.getElementById('btnFeed200Banner');
+    const adaptiveStatusBanner = document.getElementById('adaptiveStatusBanner');
+    const overviewAdaptiveActive = document.getElementById('overviewAdaptiveActive');
+    const overviewAdaptiveSwitches = document.getElementById('overviewAdaptiveSwitches');
+    const overviewAdaptiveWindow = document.getElementById('overviewAdaptiveWindow');
+    const overviewAdaptiveEvaluation = document.getElementById('overviewAdaptiveEvaluation');
+
     // Latest Operation Elements
     const opStatusBadge = document.getElementById('opStatusBadge');
     const opStatusText = document.getElementById('opStatusText');
@@ -289,6 +298,8 @@ const App = (function() {
             this.windowRequests = 0;
             this.lruWindowStartHits = 0;
             this.lfuWindowStartHits = 0;
+            this.lastLruRate = 0.0;
+            this.lastLfuRate = 0.0;
             if (this.policy === 'ADAPTIVE') {
                 this.setupAdaptive();
             }
@@ -299,6 +310,8 @@ const App = (function() {
             this.windowRequests = 0;
             this.lruWindowStartHits = 0;
             this.lfuWindowStartHits = 0;
+            this.lastLruRate = 0.0;
+            this.lastLfuRate = 0.0;
             this.switchLog = [];
         }
         toBlockAddress(addr) {
@@ -331,6 +344,8 @@ const App = (function() {
             const lfuRate = ((lfuHits - this.lfuWindowStartHits) * 100.0) / 200;
             this.lruWindowStartHits = lruHits;
             this.lfuWindowStartHits = lfuHits;
+            this.lastLruRate = lruRate;
+            this.lastLfuRate = lfuRate;
             this.windowRequests = 0;
 
             const current = this.l1.policy;
@@ -480,6 +495,10 @@ const App = (function() {
                 blockSize: this.blockSize,
                 switchCount: this.switchLog.length,
                 switchLog: this.switchLog,
+                windowRequests: this.windowRequests,
+                adaptWindow: 200,
+                lastLruRate: this.lastLruRate,
+                lastLfuRate: this.lastLfuRate,
                 l1Capacity: this.l1.capacity,
                 l2Capacity: this.l2.capacity,
                 metrics: metricsObj,
@@ -648,12 +667,46 @@ const App = (function() {
             trendRamMisses.textContent = `${(m.ramHitRate !== undefined ? m.ramHitRate : m.ramMissRate || 0).toFixed(1)}% RAM`;
         }
 
-        // Active Policy display for ADAPTIVE
+        // Active Policy display for ADAPTIVE on Overview Page
+        const activePol = state.activePolicy || (state.policy === 'ADAPTIVE' ? 'LRU' : state.policy || 'LRU');
+        const switchCount = state.switchCount !== undefined ? state.switchCount : (state.switchLog ? state.switchLog.length : 0);
+        const winProgress = state.windowRequests !== undefined ? state.windowRequests : (m.totalRequests % 200);
+
+        if (overviewAdaptiveActive) {
+            overviewAdaptiveActive.textContent = `ACTIVE: ${activePol}`;
+            overviewAdaptiveActive.className = `adaptive-active-pill pill-${activePol.toLowerCase()}`;
+        }
+        if (overviewAdaptiveSwitches) {
+            overviewAdaptiveSwitches.textContent = switchCount.toString();
+        }
+        if (overviewAdaptiveWindow) {
+            if (state.policy === 'ADAPTIVE') {
+                const nextIn = 200 - winProgress;
+                overviewAdaptiveWindow.textContent = `${winProgress} / 200 ops (${nextIn} until next decision)`;
+            } else {
+                overviewAdaptiveWindow.textContent = `Fixed Policy Mode (${state.policy})`;
+            }
+        }
+        if (overviewAdaptiveEvaluation) {
+            if (state.switchLog && state.switchLog.length > 0) {
+                const lastSw = state.switchLog[state.switchLog.length - 1];
+                overviewAdaptiveEvaluation.textContent = `Switched at #${lastSw.atRequest}: ${lastSw.from} → ${lastSw.to} (LRU ${lastSw.lruRate.toFixed(1)}% vs LFU ${lastSw.lfuRate.toFixed(1)}%)`;
+            } else if ((state.lastLruRate !== undefined && state.lastLruRate > 0) || (state.lastLfuRate !== undefined && state.lastLfuRate > 0)) {
+                overviewAdaptiveEvaluation.textContent = `Shadow Eval: LRU ${state.lastLruRate.toFixed(1)}% vs LFU ${state.lastLfuRate.toFixed(1)}%`;
+            } else if (state.policy === 'ADAPTIVE') {
+                overviewAdaptiveEvaluation.textContent = 'Awaiting 200 ops (Click Feed +200)';
+            } else {
+                overviewAdaptiveEvaluation.textContent = 'Switch to ADAPTIVE to enable auto-tuning';
+            }
+        }
+
         if (state.policy === 'ADAPTIVE') {
-            if (hierarchySubtitle) hierarchySubtitle.textContent = `L1 → L2 → RAM (⚡ ADAPTIVE Mode)`;
+            if (hierarchySubtitle) hierarchySubtitle.textContent = `L1 → L2 → RAM (⚡ ADAPTIVE Mode — Currently using ${activePol})`;
             if (badgeActivePolicy) {
                 badgeActivePolicy.style.display = 'inline-block';
-                badgeActivePolicy.textContent = `Active: ${state.activePolicy || 'LRU'}`;
+                badgeActivePolicy.textContent = `Active: ${activePol}`;
+                badgeActivePolicy.style.borderColor = activePol === 'LFU' ? '#A855F7' : '#00E5A3';
+                badgeActivePolicy.style.color = activePol === 'LFU' ? '#C084FC' : '#00E5A3';
             }
         } else {
             if (hierarchySubtitle) hierarchySubtitle.textContent = `L1 → L2 → RAM (Policy: ${state.policy || 'LRU'})`;
@@ -1045,6 +1098,76 @@ const App = (function() {
     }
 
     // ==========================================
+    // DEDICATED ADAPTIVE QUICK-FEED (+200 OPS)
+    // ==========================================
+    async function feedAdaptiveBatch200() {
+        const setBtnsBusy = (busy) => {
+            if (btnFeed200) {
+                btnFeed200.disabled = busy;
+                btnFeed200.innerHTML = busy
+                    ? '<span>⏳ Feeding 200 Ops...</span>'
+                    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><span>⚡ Feed +200 Ops (Adaptive Step)</span>';
+            }
+            if (btnFeed200Banner) {
+                btnFeed200Banner.disabled = busy;
+                btnFeed200Banner.innerHTML = busy
+                    ? '<span>⏳ Processing 200 Ops...</span>'
+                    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><span>⚡ Feed +200 Ops (Adaptive Step)</span>';
+            }
+        };
+
+        setBtnsBusy(true);
+
+        try {
+            // 1. Automatically activate ADAPTIVE policy if not already active
+            if (currentPolicy !== 'ADAPTIVE') {
+                currentPolicy = 'ADAPTIVE';
+                if (selectPolicy) selectPolicy.value = 'ADAPTIVE';
+                await apiRequest('/api/config', 'POST', { policy: 'ADAPTIVE' });
+            }
+
+            // 2. Query current total operations count
+            const currState = await apiRequest('/api/status');
+            const totalSoFar = (currState && currState.metrics && currState.metrics.totalRequests) ? currState.metrics.totalRequests : 0;
+            const batchIndex = Math.floor(totalSoFar / 200);
+
+            // 3. Generate alternating workload to expose real policy switches
+            const addrs = [];
+            if (batchIndex % 2 === 0) {
+                // Phase A (0..200, 400..600): Frequency-skewed pattern (LFU outperforms LRU)
+                // Hot items 0x1000..0x3000 repeated heavily; cold items 0x4000..0x11000 stream past
+                for (let i = 0; i < 10; i++) {
+                    for (let h = 0; h < 2; h++) addrs.push('0x1000', '0x2000', '0x3000');
+                    for (let c = 4; c <= 17; c++) addrs.push('0x' + (c * 0x1000).toString(16).toUpperCase().padStart(4, '0'));
+                }
+            } else {
+                // Phase B (200..400, 600..800): Working-set transition (stale frequency pollution)
+                // New distinct loop of 11 items (0x5000..0x5A00)
+                // LFU refuses to evict old cold lines; LRU captures the new working set and crushes LFU!
+                for (let i = 0; i < 18; i++) {
+                    for (let k = 0; k < 11; k++) {
+                        addrs.push('0x5' + k.toString(16).toUpperCase() + '00');
+                    }
+                }
+                while (addrs.length < 200) addrs.push('0x5000');
+            }
+
+            // 4. Send the 200 addresses in one fast batch to C++ / Cloud engine
+            const res = await apiRequest('/api/sequence', 'POST', { sequence: addrs });
+            if (res) {
+                if (res.latestOperation) {
+                    addTraceRow(res.latestOperation);
+                }
+                updateDashboard(res, res.latestOperation);
+            }
+        } catch (err) {
+            console.error('Error feeding adaptive batch:', err);
+        } finally {
+            setBtnsBusy(false);
+        }
+    }
+
+    // ==========================================
     // INITIALIZATION & EVENT LISTENERS
     // ==========================================
     function setupEventListeners() {
@@ -1107,6 +1230,14 @@ const App = (function() {
 
         btnNextStep.addEventListener('click', executeNextStep);
         btnReset.addEventListener('click', resetSimulation);
+
+        // Dedicated Adaptive Quick-Feed Listeners
+        if (btnFeed200) {
+            btnFeed200.addEventListener('click', feedAdaptiveBatch200);
+        }
+        if (btnFeed200Banner) {
+            btnFeed200Banner.addEventListener('click', feedAdaptiveBatch200);
+        }
 
         // Simulator Page Buttons
         btnSimPlay.addEventListener('click', () => {

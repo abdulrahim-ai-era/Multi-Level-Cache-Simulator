@@ -52,6 +52,10 @@ std::string buildFullStateJson(const OperationRecord* lastOp = nullptr) {
     // Switch log for Adaptive policy
     const auto& switchLog = g_hierarchy.getSwitchLog();
     ss << "\"switchCount\":" << switchLog.size() << ",";
+    ss << "\"windowRequests\":" << g_hierarchy.getWindowRequests() << ",";
+    ss << "\"adaptWindow\":200,";
+    ss << "\"lastLruRate\":" << g_hierarchy.getLastLruRate() << ",";
+    ss << "\"lastLfuRate\":" << g_hierarchy.getLastLfuRate() << ",";
     ss << "\"switchLog\":[";
     for (size_t i = 0; i < switchLog.size(); ++i) {
         if (i > 0) ss << ",";
