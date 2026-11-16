@@ -944,12 +944,43 @@ const App = (function() {
         btnSimPlay.classList.remove('pulse');
     }
 
+    function clearComparisonUI() {
+        if (cmpLruHitRate) cmpLruHitRate.textContent = '--';
+        if (cmpLruMissRate) cmpLruMissRate.textContent = '--';
+        if (cmpLruAvgTime) cmpLruAvgTime.textContent = '--';
+        if (cmpLruEvictions) cmpLruEvictions.textContent = '--';
+
+        if (cmpFifoHitRate) cmpFifoHitRate.textContent = '--';
+        if (cmpFifoMissRate) cmpFifoMissRate.textContent = '--';
+        if (cmpFifoAvgTime) cmpFifoAvgTime.textContent = '--';
+        if (cmpFifoEvictions) cmpFifoEvictions.textContent = '--';
+
+        if (cmpLfuHitRate) cmpLfuHitRate.textContent = '--';
+        if (cmpLfuMissRate) cmpLfuMissRate.textContent = '--';
+        if (cmpLfuAvgTime) cmpLfuAvgTime.textContent = '--';
+        if (cmpLfuEvictions) cmpLfuEvictions.textContent = '--';
+
+        if (cmpAdaptiveHitRate) cmpAdaptiveHitRate.textContent = '--';
+        if (cmpAdaptiveSwitches) cmpAdaptiveSwitches.textContent = '--';
+        if (cmpAdaptiveAvgTime) cmpAdaptiveAvgTime.textContent = '--';
+        if (cmpAdaptiveActivePolicy) cmpAdaptiveActivePolicy.textContent = '--';
+
+        const benchInfo = document.getElementById('benchmarkInfoLabel');
+        if (benchInfo) {
+            benchInfo.style.display = 'none';
+            benchInfo.textContent = '';
+        }
+
+        CacheCharts.renderComparison('comparisonChart', null);
+    }
+
     async function resetSimulation() {
         pauseSequence();
         sequenceQueue = [];
         currentStepIndex = 0;
         operationHistory = [];
         updateProgress();
+        clearComparisonUI();
 
         traceTableBody.innerHTML = `
             <tr>
@@ -1008,21 +1039,29 @@ const App = (function() {
     }
 
     async function runMultiPolicyBenchmark() {
+        // If queue is empty, attempt to read from sequence input box
+        if (sequenceQueue.length === 0) {
+            loadSequenceFromInput();
+        }
+
+        // If still empty, do NOT run on fabricated data. Leave cards empty and notify user!
+        if (sequenceQueue.length === 0) {
+            clearComparisonUI();
+            const benchInfo = document.getElementById('benchmarkInfoLabel');
+            if (benchInfo) {
+                benchInfo.style.display = 'block';
+                benchInfo.style.color = '#FCD34D';
+                benchInfo.innerHTML = '⚠️ <strong>No sequence loaded!</strong> Please load a sequence of memory addresses in the Overview or Simulator tab first before running the benchmark.';
+            }
+            return;
+        }
+
         btnRunComparison.disabled = true;
         btnRunComparison.textContent = 'Building Benchmark Sequence...';
 
         // ── Build a benchmark sequence that EXPOSES policy differences ──────────
-        // Problem: if all unique addresses fit inside L1+L2, every policy behaves
-        // identically (no eviction from L2 ever happens).
-        // Fix:
-        //   1. Collect the user's sequence (or a default one).
-        //   2. Append "flood" addresses so we EXCEED L1+L2 total capacity.
-        //   3. Repeat the hot addresses so LFU's frequency counters diverge from LRU/FIFO.
-        //   4. Ensure ≥ 300 total requests so ADAPTIVE's 200-request window can fire.
-
-        const baseSeq = sequenceQueue.length > 0
-            ? [...sequenceQueue]
-            : ['0x1000','0x2000','0x3000','0x4000','0x1000','0x5000','0x2000','0x6000','0x1000','0x7000'];
+        // 1. Take the user's loaded sequence
+        const baseSeq = [...sequenceQueue];
 
         const totalCap = currentL1Cap + currentL2Cap;
         const uniqueInBase = [...new Set(baseSeq)];
@@ -1334,6 +1373,7 @@ const App = (function() {
     return {
         async init() {
             setupEventListeners();
+            clearComparisonUI();
             await refreshState();
             // Periodic connection health poll every 4 seconds
             setInterval(async () => {

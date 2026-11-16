@@ -129,7 +129,7 @@ const CacheCharts = (function() {
             ctx.fillStyle = '#576A84';
             ctx.font = '12px "Inter", sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('Click "Run Multi-Policy Benchmark" to compare LRU, FIFO, and LFU policies.', width / 2, height / 2);
+            ctx.fillText('No benchmark run yet. Load a sequence and click "Run Multi-Policy Benchmark".', width / 2, height / 2);
             return;
         }
 
