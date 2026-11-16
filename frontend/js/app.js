@@ -18,6 +18,7 @@ const App = (function() {
 
     // Sequence Simulation State
     let sequenceQueue = [];
+    let executedWorkload = [];
     let currentStepIndex = 0;
     let isPlaying = false;
     let playTimer = null;
@@ -872,6 +873,7 @@ const App = (function() {
     // ==========================================
     async function executeSingleAddress(addr) {
         if (!addr || !addr.trim()) return;
+        executedWorkload.push(addr.trim());
         const res = await apiRequest('/api/request', 'POST', { address: addr.trim() });
         if (res && res.latestOperation) {
             addTraceRow(res.latestOperation);
@@ -977,6 +979,7 @@ const App = (function() {
     async function resetSimulation() {
         pauseSequence();
         sequenceQueue = [];
+        executedWorkload = [];
         currentStepIndex = 0;
         operationHistory = [];
         updateProgress();
@@ -1008,6 +1011,7 @@ const App = (function() {
         const tokens = raw.split(/[\s,]+/).filter(t => t.length > 0);
         if (tokens.length > 0) {
             sequenceQueue = tokens;
+            executedWorkload = [...tokens];
             currentStepIndex = 0;
             updateProgress();
             inputSequence.value = tokens.join(', ');
@@ -1033,25 +1037,36 @@ const App = (function() {
         }
 
         sequenceQueue = seq;
+        executedWorkload = [...seq];
         currentStepIndex = 0;
         inputSequence.value = seq.join(', ');
         updateProgress();
     }
 
     async function runMultiPolicyBenchmark() {
-        // If queue is empty, attempt to read from sequence input box
-        if (sequenceQueue.length === 0) {
+        // Collect sequence: from loaded sequenceQueue, executedWorkload (e.g. 800 ops from Adaptive Feed), or history
+        let baseSeq = [];
+        if (sequenceQueue.length > 0) {
+            baseSeq = [...sequenceQueue];
+        } else if (executedWorkload.length > 0) {
+            baseSeq = [...executedWorkload];
+        } else if (operationHistory.length > 0) {
+            baseSeq = operationHistory.map(op => op.address);
+        } else {
             loadSequenceFromInput();
+            if (sequenceQueue.length > 0) {
+                baseSeq = [...sequenceQueue];
+            }
         }
 
-        // If still empty, do NOT run on fabricated data. Leave cards empty and notify user!
-        if (sequenceQueue.length === 0) {
+        // If no instructions were executed or loaded at all, notify user!
+        if (baseSeq.length === 0) {
             clearComparisonUI();
             const benchInfo = document.getElementById('benchmarkInfoLabel');
             if (benchInfo) {
                 benchInfo.style.display = 'block';
                 benchInfo.style.color = '#FCD34D';
-                benchInfo.innerHTML = '⚠️ <strong>No sequence loaded!</strong> Please load a sequence of memory addresses in the Overview or Simulator tab first before running the benchmark.';
+                benchInfo.innerHTML = '⚠️ <strong>No instructions run or loaded yet!</strong> Please execute instructions (e.g. click "⚡ Feed +200 Ops") or load a sequence first before benchmarking.';
             }
             return;
         }
@@ -1060,24 +1075,19 @@ const App = (function() {
         btnRunComparison.textContent = 'Building Benchmark Sequence...';
 
         // ── Build a benchmark sequence that EXPOSES policy differences ──────────
-        // 1. Take the user's loaded sequence
-        const baseSeq = [...sequenceQueue];
-
-        const totalCap = currentL1Cap + currentL2Cap;
-        const uniqueInBase = [...new Set(baseSeq)];
-
-        // Add flood addresses to push total unique count beyond L1+L2 capacity
-        const floodAddrs = [];
-        for (let i = uniqueInBase.length; i < totalCap + 6; i++) {
-            floodAddrs.push(`0x${((i + 1) * 0x1000).toString(16).toUpperCase().padStart(4, '0')}`);
-        }
-
-        // Pattern: [base + flood] fills & overflows cache; [base × 3] shows recency/frequency differences
-        let benchSeq = [...baseSeq, ...floodAddrs, ...baseSeq, ...baseSeq, ...baseSeq];
-
-        // Pad to ≥ 300 so ADAPTIVE window (200 req) fires at least once
-        while (benchSeq.length < 300) {
-            benchSeq = [...benchSeq, ...baseSeq];
+        let benchSeq = [...baseSeq];
+        if (benchSeq.length < 200) {
+            // For short sequences (< 200 addresses), pad and flood to expose policy differences
+            const totalCap = currentL1Cap + currentL2Cap;
+            const uniqueInBase = [...new Set(baseSeq)];
+            const floodAddrs = [];
+            for (let i = uniqueInBase.length; i < totalCap + 6; i++) {
+                floodAddrs.push(`0x${((i + 1) * 0x1000).toString(16).toUpperCase().padStart(4, '0')}`);
+            }
+            benchSeq = [...baseSeq, ...floodAddrs, ...baseSeq, ...baseSeq, ...baseSeq];
+            while (benchSeq.length < 300) {
+                benchSeq = [...benchSeq, ...baseSeq];
+            }
         }
 
         btnRunComparison.textContent = `Running ${benchSeq.length} requests across 4 policies...`;
@@ -1192,6 +1202,7 @@ const App = (function() {
             }
 
             // 4. Send the 200 addresses in one fast batch to C++ / Cloud engine
+            executedWorkload.push(...addrs);
             const res = await apiRequest('/api/sequence', 'POST', { sequence: addrs });
             if (res) {
                 if (res.latestOperation) {
