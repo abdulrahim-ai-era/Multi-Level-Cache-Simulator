@@ -852,6 +852,52 @@ body {
     margin-top: 6px;
 }
 
+.policy-block-row {
+    grid-template-columns: 1fr 1fr;
+    margin-bottom: 8px;
+}
+
+.mobile-brand-pill {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.mobile-brand-icon {
+    width: 22px;
+    height: 22px;
+    filter: drop-shadow(0 0 8px rgba(0, 217, 255, 0.4));
+}
+
+.mobile-brand-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    color: #FFFFFF;
+}
+
+.mobile-scroll-hint {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    color: var(--accent-cyan);
+    font-family: var(--font-mono);
+    padding: 0 4px 8px 4px;
+    opacity: 0.9;
+}
+
+.mobile-scroll-hint span {
+    display: inline-block;
+    animation: bounceRight 1.5s infinite ease-in-out;
+}
+
+@keyframes bounceRight {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(4px); }
+}
+
 .selector-field {
     display: flex;
     flex-direction: column;
@@ -1329,8 +1375,9 @@ body {
    ========================================================================== */
 .comparison-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 20px;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
 }
 
 .policy-card {
@@ -1579,50 +1626,6 @@ body {
 }
 
 /* ==========================================================================
-   RESPONSIVE DESIGN (Lap-top / Desktop Optimization)
-   ========================================================================== */
-@media (max-width: 1200px) {
-    .workspace-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .analytics-charts-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .counters-grid {
-        grid-template-columns: repeat(3, 1fr);
-    }
-}
-
-@media (max-width: 900px) {
-    .sidebar {
-        width: 72px;
-        padding: 16px 8px;
-    }
-
-    .brand-text, .nav-item span, .footer-tagline {
-        display: none;
-    }
-
-    .metrics-row {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
-    .analytics-metrics-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
-    .comparison-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .about-grid {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* ==========================================================================
    ADAPTIVE POLICY LIVE BANNER & QUICK FEED CONTROLS
    ========================================================================== */
 .adaptive-status-banner {
@@ -1775,13 +1778,351 @@ body {
     padding: 10px 14px;
 }
 
+/* ==========================================================================
+   RESPONSIVE MOBILE OPTIMIZATION
+   ========================================================================== */
+
+/* Universal Canvas Responsiveness */
+canvas {
+    max-width: 100% !important;
+    height: auto !important;
+}
+
+/* 1. Large Tablets & Small Laptops (<= 1100px) */
+@media (max-width: 1100px) {
+    .workspace-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .comparison-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .analytics-charts-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .counters-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* 2. Tablets (<= 900px) */
 @media (max-width: 900px) {
+    .metrics-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    .analytics-metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
     .adaptive-status-banner {
         flex-direction: column;
         align-items: flex-start;
+        gap: 12px;
     }
+
     .btn-action-adaptive {
         width: 100%;
+    }
+
+    .about-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 3. Mobile Phones & Tablet Portrait (<= 768px) - Full Mobile Dock & Layout */
+@media (max-width: 768px) {
+    /* App shell transforms to mobile viewport */
+    .app-container {
+        flex-direction: column;
+        width: 100vw;
+        min-height: 100vh;
+        overflow-x: hidden;
+    }
+
+    /* Fixed Glassmorphic Mobile Bottom Dock */
+    .sidebar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100vw;
+        height: 64px;
+        padding: 6px 8px;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-around;
+        background: rgba(5, 18, 34, 0.95);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border-right: none;
+        border-top: 1px solid rgba(0, 217, 255, 0.25);
+        box-shadow: 0 -6px 25px rgba(0, 0, 0, 0.6);
+        z-index: 9999;
+    }
+
+    /* Hide desktop logo & footer from inside the bottom dock */
+    .sidebar .brand,
+    .sidebar .sidebar-footer {
+        display: none !important;
+    }
+
+    .nav-menu {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-around;
+        align-items: center;
+        width: 100%;
+        gap: 4px;
+    }
+
+    .nav-item {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        padding: 6px 2px;
+        border-radius: var(--radius-sm);
+        border-left: none !important;
+        background: transparent !important;
+        text-align: center;
+        min-height: 48px; /* Touch target */
+    }
+
+    .nav-item span {
+        display: block !important;
+        font-size: 0.65rem;
+        letter-spacing: 0.3px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .nav-icon {
+        width: 20px;
+        height: 20px;
+    }
+
+    .nav-item.active {
+        color: var(--accent-cyan) !important;
+        background: rgba(0, 217, 255, 0.12) !important;
+        border-bottom: 2px solid var(--accent-cyan);
+    }
+
+    .nav-item.active .nav-icon {
+        stroke: var(--accent-cyan);
+        opacity: 1;
+        filter: drop-shadow(0 0 6px rgba(0, 217, 255, 0.6));
+    }
+
+    /* Mobile Brand & Header */
+    .mobile-brand-pill {
+        display: inline-flex;
+    }
+
+    .main-content {
+        padding: 14px 14px 84px 14px; /* Extra bottom padding so dock never covers controls */
+        width: 100%;
+    }
+
+    .top-header {
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .header-title {
+        font-size: 1.15rem;
+    }
+
+    .header-subtitle {
+        font-size: 0.74rem;
+    }
+
+    .engine-badge {
+        font-size: 0.72rem;
+        padding: 5px 10px;
+    }
+
+    /* Cache Hierarchy Smooth Mobile Swiping */
+    .mobile-scroll-hint {
+        display: flex;
+    }
+
+    .cache-hierarchy-container {
+        overflow-x: auto;
+        justify-content: flex-start;
+        padding: 14px 6px 18px 6px;
+        gap: 8px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(0, 217, 255, 0.3) transparent;
+    }
+
+    .cache-hierarchy-container::-webkit-scrollbar {
+        height: 4px;
+    }
+
+    .cache-hierarchy-container::-webkit-scrollbar-thumb {
+        background: rgba(0, 217, 255, 0.3);
+        border-radius: 2px;
+    }
+
+    .cache-module {
+        min-width: 145px;
+        width: 145px;
+        flex-shrink: 0;
+    }
+
+    .hierarchy-connector {
+        padding: 0 4px;
+        flex-shrink: 0;
+    }
+
+    /* Latest Operation Card Stacking */
+    .latest-op-content {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 14px;
+    }
+
+    .cache-movement-wrap {
+        width: 100%;
+        align-items: flex-start;
+    }
+
+    .movement-breadcrumbs {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    /* Simulator Tab Trace Table Scroll */
+    .table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .futuristic-table {
+        min-width: 620px;
+    }
+
+    .sim-playback-bar {
+        flex-wrap: wrap;
+    }
+
+    .sim-presets-bar {
+        flex-wrap: wrap;
+    }
+
+    .page-title-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .sequence-progress-box {
+        width: 100%;
+        align-items: flex-start;
+    }
+
+    /* Modal Mobile Dimensions */
+    .modal-container {
+        width: 94vw !important;
+        max-width: 94vw !important;
+        margin: 12px auto;
+    }
+}
+
+/* 4. Compact Smartphones (<= 480px) */
+@media (max-width: 480px) {
+    .metrics-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .metric-card {
+        padding: 12px 10px;
+        gap: 10px;
+    }
+
+    .metric-icon-wrap {
+        width: 38px;
+        height: 38px;
+    }
+
+    .metric-icon-wrap svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    .metric-value {
+        font-size: 1.25rem;
+    }
+
+    .metric-label {
+        font-size: 0.68rem;
+    }
+
+    .panel {
+        padding: 16px 14px;
+        border-radius: var(--radius-lg);
+    }
+
+    .panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .hierarchy-legend {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    /* Selectors full width on narrow phones */
+    .selectors-row,
+    .policy-block-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .btn-group-row {
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 6px;
+    }
+
+    .btn {
+        padding: 8px 10px;
+        font-size: 0.78rem;
+    }
+
+    .comparison-grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    .counters-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .adaptive-banner-meta {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .meta-separator {
+        display: none;
+    }
+
+    .chart-canvas-wrapper {
+        height: 190px;
     }
 }
 

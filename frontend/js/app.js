@@ -1363,6 +1363,17 @@ const App = (function() {
             await apiRequest('/api/config', 'POST', { policy: currentPolicy });
             refreshState();
         });
+
+        // Window resize: cleanly re-fit charts to mobile / tablet widths
+        let resizeTimer = null;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                if (CacheCharts && CacheCharts.resizeCharts) {
+                    CacheCharts.resizeCharts();
+                }
+            }, 120);
+        });
     }
 
     async function refreshState() {
